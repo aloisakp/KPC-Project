@@ -4,6 +4,7 @@
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="KPC Launcher" Height="640" Width="960" MinHeight="560" MinWidth="820"
         Background="{StaticResource Bg}"
+        Icon="/KpcLauncher;component/Assets/launcher.ico"
         WindowStyle="None"
         WindowStartupLocation="CenterScreen">
 
@@ -34,6 +35,9 @@
 
                     <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="12,0,16,0"
                                 VerticalAlignment="Center">
+                        <Image Source="/KpcLauncher;component/Assets/launcher-logo.png"
+                               Width="22" Height="22" Margin="0,0,8,0"
+                               RenderOptions.BitmapScalingMode="HighQuality"/>
                         <TextBlock Text="KPC" VerticalAlignment="Center"
                                    FontFamily="Segoe UI Semibold" FontSize="13"/>
                         <TextBlock Text="Launcher" Margin="5,0,0,0" VerticalAlignment="Center"
@@ -77,15 +81,36 @@
                 </Grid>
             </Border>
 
-            <!-- Home -->
-            <Grid Grid.Row="1" Visibility="{Binding IsHome, Converter={StaticResource BoolToVis}}">
+            <!-- Shared decorative background, below the interactive content. -->
+            <Grid Grid.Row="1" ClipToBounds="True" IsHitTestVisible="False">
                 <Grid.Background>
-                    <LinearGradientBrush StartPoint="0,0" EndPoint="0.7,1">
-                        <GradientStop Color="#1A2136" Offset="0"/>
-                        <GradientStop Color="#0C0E13" Offset="0.75"/>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Color="#18243A" Offset="0"/>
+                        <GradientStop Color="#101722" Offset="0.55"/>
+                        <GradientStop Color="#0C0E13" Offset="1"/>
                     </LinearGradientBrush>
                 </Grid.Background>
+                <Viewbox Stretch="Uniform" StretchDirection="Both" HorizontalAlignment="Right">
+                    <Grid Width="560" Height="500">
+                        <Ellipse Width="680" Height="680" HorizontalAlignment="Right"
+                                 VerticalAlignment="Center" Margin="0,0,-190,0" Opacity="0.35">
+                            <Ellipse.Fill>
+                                <RadialGradientBrush>
+                                    <GradientStop Color="#47618B" Offset="0"/>
+                                    <GradientStop Color="#0047618B" Offset="1"/>
+                                </RadialGradientBrush>
+                            </Ellipse.Fill>
+                        </Ellipse>
+                        <Image Source="/KpcLauncher;component/Assets/launcher-logo.png"
+                               Width="560" Height="560" HorizontalAlignment="Right"
+                               VerticalAlignment="Center" Margin="0,0,-65,0" Opacity="0.065"
+                               RenderOptions.BitmapScalingMode="HighQuality"/>
+                    </Grid>
+                </Viewbox>
+            </Grid>
 
+            <!-- Home -->
+            <Grid Grid.Row="1" Visibility="{Binding IsHome, Converter={StaticResource BoolToVis}}">
                 <StackPanel VerticalAlignment="Center" Margin="46,0">
                     <TextBlock Text="KPC LAUNCHER" Style="{StaticResource H1}"/>
                     <TextBlock Text="Preservation mode" Style="{StaticResource Sub}"

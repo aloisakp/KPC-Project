@@ -13,6 +13,7 @@
     <StartupObject>KpcLauncher.Program</StartupObject>
     <DefaultItemExcludes>$(DefaultItemExcludes);artifacts\**;bin\**;obj\**</DefaultItemExcludes>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\launcher.ico</ApplicationIcon>
     <InvariantGlobalization>false</InvariantGlobalization>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <Version>0.1.0</Version>
@@ -26,6 +27,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Resource Include="Assets\launcher-logo.png" />
+    <Resource Include="Assets\launcher.ico" />
     <Compile Remove="tests\**\*.cs" />
     <None Remove="tests\**" />
   </ItemGroup>

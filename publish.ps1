@@ -81,6 +81,7 @@ $packArguments = @(
     '--mainExe', 'KpcLauncher.exe',
     '--packTitle', 'KPC Launcher',
     '--packAuthors', 'aloisakp',
+    '--icon', (Join-Path $here 'Assets\launcher.ico'),
     '--outputDir', $releaseDir,
     '--noPortable'
 )
