@@ -173,7 +173,7 @@ public sealed class PreservationPipeline(
                 if (DateTime.UtcNow - lastReport >= TimeSpan.FromMilliseconds(200) || checkedBytes == total)
                 {
                     reporter?.Progress(new StepProgress(step, checkedBytes, total,
-                        $"SHA-256: {Human.Bytes(checkedBytes)} of {Human.Bytes(total)}"));
+                        $"SHA-256: {Human.Bytes(checkedBytes)} of {Human.Bytes(total)} on disk"));
                     lastReport = DateTime.UtcNow;
                 }
             }

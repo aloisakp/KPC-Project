@@ -108,7 +108,7 @@ internal sealed partial class SteamTransferProgress(uint appId, uint depotId, ul
 
         var done = (long)Math.Clamp(_bytes, 0, _total * .95);
         var percent = 100.0 * done / _total;
-        var detail = $"Estimated {percent:0}% - {Human.Bytes(done)} of {Human.Bytes(_total)}";
+        var detail = $"Estimated {percent:0}% - {Human.Bytes(done)} of {Human.Bytes(_total)} compressed";
         if (percent >= 94.9) detail += " - waiting for Steam completion";
         else if (_hasRate && _rate > 0 && now - _rateAt <= RateLifetime)
             detail += $" - Steam: {_rate * 8 / 1_000_000:0} Mbps";

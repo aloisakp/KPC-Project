@@ -105,7 +105,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposab
     }
 
     private bool _isLogVisible;
-    public bool IsLogVisible { get => _isLogVisible; set => Set(ref _isLogVisible, value); }
+    public bool IsLogVisible { get => _isLogVisible; private set => Set(ref _isLogVisible, value); }
 
     // State
 
@@ -340,7 +340,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposab
         }
 
         var recheck = DownloadsComplete;
-        IsLogVisible = true;
 
         await RunGuarded(recheck ? "Verifying preserved downloads" : "Preparing",
             cancellationToken =>
@@ -467,7 +466,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposab
         }
         catch (Exception ex)
         {
-            _ui.Post(() => IsLogVisible = true);
             CrashLog.WriteException(description, ex);
             Log_(ex.Message, LogLevel.Error);
             if (ex.InnerException is { } inner && inner.Message != ex.Message)
