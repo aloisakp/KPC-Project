@@ -33,15 +33,5 @@ public static class Human
         return u == 0 ? $"{n} B" : $"{v:0.##} {units[u]}";
     }
 
-    public static string Rate(double bytesPerSecond) =>
-        bytesPerSecond <= 0 ? "--" : $"{Bytes((long)bytesPerSecond)}/s";
-
-    public static string Eta(long remaining, double bytesPerSecond)
-    {
-        if (bytesPerSecond <= 0 || remaining <= 0) return "--";
-        var t = TimeSpan.FromSeconds(remaining / bytesPerSecond);
-        return t.TotalHours >= 1 ? $"{(int)t.TotalHours}h {t.Minutes:00}m" : $"{t.Minutes:00}m {t.Seconds:00}s";
-    }
 }
-
 

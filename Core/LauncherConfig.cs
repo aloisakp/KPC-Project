@@ -9,7 +9,6 @@ public sealed class LauncherConfig
 {
     public const uint AppId = 844870;
     public const uint DepotId = 844871;
-    public const string Branch = "public";
 
     public static IReadOnlyList<ArchiveSpec> RequiredArchives { get; } =
     [
@@ -17,7 +16,6 @@ public sealed class LauncherConfig
         new("Archive B", 6221929141711975568UL),
     ];
 
-    public int Schema { get; set; } = 1;
     public string StorageRoot { get; set; } = "";
 
     public static string AppDataDir => Path.Combine(

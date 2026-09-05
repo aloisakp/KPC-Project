@@ -14,7 +14,14 @@
   or stop a transfer already handed to Steam. Steam remains the access-control owner.
 - Completion must name the expected staging directory and manifest. Storage links
   and junctions are rejected. Previous folders are kept instead of recursively
-  removed. A file lock prevents simultaneous launcher operations.
+  removed. A file lock prevents simultaneous launcher operations. Steam's current
+  console log is checked for an earlier pending request before staging changes or
+  retries. Steam itself is an independent process, so this is not an atomic lock
+  against manual commands or other software controlling Steam.
+- Download percentage is a display-only estimate from Steam's rate logs. It cannot
+  authorize an account, accept a directory, or mark an archive complete. Local
+  verification/copy progress is measured. Stale or ambiguous speed data is not
+  treated as evidence that a download finished.
 - SHA-256 receipts detect content changes after download, including changes that
   preserve file counts/sizes. They supplement Steam's validation and are not a trust
   anchor against a malicious program running as the same Windows user.

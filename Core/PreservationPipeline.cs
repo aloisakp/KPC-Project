@@ -63,6 +63,7 @@ public sealed class PreservationPipeline(
             var directory = config.ArchiveDirectory(archive);
 
             var staging = steam.StagingDirectory(LauncherConfig.AppId, LauncherConfig.DepotId);
+            steam.RequireDepotIdle(LauncherConfig.AppId, LauncherConfig.DepotId);
             PrepareStaging(staging, archive.ManifestId);
 
             reporter.Step($"Downloading {archive.Label}");
@@ -79,7 +80,7 @@ public sealed class PreservationPipeline(
 
             reporter.Step($"Filing {archive.Label}");
             steam.RequireAccount(authorization);
-            FileIntoPlace(produced, directory, cancellationToken);
+            await FileIntoPlaceAsync(produced, directory, cancellationToken).ConfigureAwait(false);
 
             reporter.Step($"Verifying {archive.Label}");
             WriteStamp(directory, archive, cancellationToken);
@@ -136,10 +137,12 @@ public sealed class PreservationPipeline(
         var (files, bytes, digest) = Measure(directory, cancellationToken, reporter, $"Verifying {archive.Label}");
         if (files == 0) throw new SteamDownloadException("Steam left an empty archive; it was not marked complete.");
         var stamp = new ArchiveStamp(archive.ManifestId.ToString(), files, bytes, digest);
-        File.WriteAllText(Path.Combine(directory, CompletionStamp), JsonSerializer.Serialize(stamp));
+        var path = Path.Combine(directory, CompletionStamp);
+        SafePaths.NoLinks(path);
+        File.WriteAllText(path, JsonSerializer.Serialize(stamp));
     }
 
-    /// <summary>Counts what is in an archive, ignoring the stamp file itself.</summary>
+    /// <summary>Hashes archive paths and contents, ignoring the receipt itself.</summary>
     internal static (int Files, long Bytes, string Digest) Measure(string directory, CancellationToken cancellationToken,
         IReporter? reporter = null, string step = "Verifying files")
     {
@@ -159,7 +162,6 @@ public sealed class PreservationPipeline(
         {
             cancellationToken.ThrowIfCancellationRequested();
             var relative = Path.GetRelativePath(directory, file.FullName);
-            if (relative == CompletionStamp) continue;
             using var input = file.OpenRead();
             using var fileHash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
             int read;
@@ -197,7 +199,8 @@ public sealed class PreservationPipeline(
         try
         {
             var path = Path.Combine(directory, CompletionStamp);
-            if (!File.Exists(path)) return null;
+            SafePaths.NoLinks(path);
+            if (!File.Exists(path) || new FileInfo(path).Length > 16384) return null;
 
             var text = File.ReadAllText(path).Trim();
             if (text.StartsWith('{'))
@@ -221,6 +224,7 @@ public sealed class PreservationPipeline(
     {
         SafePaths.NoLinks(staging);
         var marker = Path.Combine(Path.GetDirectoryName(staging)!, StagingMarker);
+        SafePaths.NoLinks(marker);
         var staged = File.Exists(marker) ? File.ReadAllText(marker).Trim() : null;
 
         if (staged == manifestId.ToString() && Directory.Exists(staging))
@@ -242,11 +246,16 @@ public sealed class PreservationPipeline(
 
     private static void ClearStagingMarker(string staging)
     {
-        try { File.Delete(Path.Combine(Path.GetDirectoryName(staging)!, StagingMarker)); }
+        try
+        {
+            var marker = Path.Combine(Path.GetDirectoryName(staging)!, StagingMarker);
+            SafePaths.NoLinks(marker);
+            File.Delete(marker);
+        }
         catch (Exception) { /* the next run overwrites it anyway */ }
     }
 
-    private void FileIntoPlace(string from, string to, CancellationToken cancellationToken)
+    private async Task FileIntoPlaceAsync(string from, string to, CancellationToken cancellationToken)
     {
         SafePaths.NoLinks(from);
         SafePaths.NoLinks(to);
@@ -266,7 +275,7 @@ public sealed class PreservationPipeline(
         if (string.Equals(Path.GetPathRoot(from), Path.GetPathRoot(to), StringComparison.OrdinalIgnoreCase))
         {
             // Same volume, so filing the archive is a rename however large it is.
-            MoveWithRetry(from, to);
+            await MoveWithRetryAsync(from, to, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -275,7 +284,9 @@ public sealed class PreservationPipeline(
             + "copied instead of moved. Choosing a folder on the Steam drive makes this instant.",
             LogLevel.Warn);
 
-        CopyTree(from, to, cancellationToken);
+        await CopyTreeAsync(from, to, reporter, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        SafePaths.NoLinks(from);
         try { Directory.Delete(from, recursive: true); }
         catch (Exception ex) { reporter.Log($"Could not clear Steam's staging folder: {ex.Message}", LogLevel.Warn); }
     }
@@ -284,12 +295,13 @@ public sealed class PreservationPipeline(
     /// Steam can still be closing handles in the instant after it reports the download
     /// complete, so a rename that fails is retried briefly before it is treated as an error.
     /// </summary>
-    private void MoveWithRetry(string from, string to)
+    private async Task MoveWithRetryAsync(string from, string to, CancellationToken cancellationToken)
     {
         const int Attempts = 10;
 
         for (var attempt = 1; ; attempt++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             try
             {
                 Directory.Move(from, to);
@@ -299,16 +311,17 @@ public sealed class PreservationPipeline(
             {
                 if (attempt == 1)
                     reporter.Log("Waiting for Steam to release the files.", LogLevel.Dim);
-                Thread.Sleep(TimeSpan.FromSeconds(2));
+                await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
             }
         }
     }
 
-    private void CopyTree(string from, string to, CancellationToken cancellationToken)
+    internal static async Task CopyTreeAsync(string from, string to, IReporter reporter, CancellationToken cancellationToken)
     {
         var files = SafePaths.Files(from).ToArray();
         var total = files.Sum(file => file.Length);
         long copied = 0;
+        var buffer = new byte[1024 * 1024];
 
         foreach (var file in files)
         {
@@ -316,21 +329,26 @@ public sealed class PreservationPipeline(
 
             var relative = Path.GetRelativePath(from, file.FullName);
             var destination = Path.Combine(to, relative);
+            SafePaths.NoLinks(destination);
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-            file.CopyTo(destination, overwrite: true);
-
-            copied += file.Length;
-            reporter.Progress(new StepProgress(
-                "Copying to the storage folder",
-                copied,
-                total,
-                $"{Human.Bytes(copied)} of {Human.Bytes(total)}"));
+            using var input = new FileStream(file.FullName, FileMode.Open, FileAccess.Read, FileShare.Read,
+                buffer.Length, FileOptions.Asynchronous | FileOptions.SequentialScan);
+            using var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                buffer.Length, FileOptions.Asynchronous | FileOptions.SequentialScan);
+            int read;
+            while ((read = await input.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+            {
+                await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                copied += read;
+                reporter.Progress(new StepProgress("Copying to the storage folder", copied, total,
+                    $"{Human.Bytes(copied)} of {Human.Bytes(total)}"));
+            }
         }
     }
 
     public static int CompletedCount(LauncherConfig config) =>
         LauncherConfig.RequiredArchives.Count(archive => IsComplete(config, archive));
 
-    public static bool IsComplete(LauncherConfig config, ArchiveSpec archive) =>
+    private static bool IsComplete(LauncherConfig config, ArchiveSpec archive) =>
         ReadStamp(config.ArchiveDirectory(archive))?.Manifest == archive.ManifestId.ToString();
 }

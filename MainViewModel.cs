@@ -49,12 +49,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposab
             _authorization = null;
             return Task.CompletedTask;
         }), () => !IsBusy && HasAuthorization);
-        CancelCommand = new RelayCommand(() => _work?.Cancel(), () => IsBusy);
+        CancelCommand = new RelayCommand(() => _work?.Cancel(), () => CanCancel);
         BrowseCommand = new RelayCommand(BrowseStorageRoot, () => !IsBusy);
         OpenFolderCommand = new RelayCommand(OpenStorageFolder);
         OpenLogCommand = new RelayCommand(OpenLogFile);
         OpenSteamFolderCommand = new RelayCommand(OpenSteamFolder, () => _steam is not null);
-        CheckUpdatesCommand = new RelayCommand(() => _ = CheckForUpdatesAsync(true), () => !IsBusy);
+        CheckUpdatesCommand = new RelayCommand(() => _ = CheckForUpdatesAsync(), () => !IsBusy);
         ToggleLogCommand = new RelayCommand(() => IsLogVisible = !IsLogVisible);
 
         RefreshState();
@@ -65,7 +65,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposab
     public async Task InitializeAsync()
     {
         if (!HasAuthorization) await AuthorizeAsync();
-        await CheckForUpdatesAsync(true);
+        await CheckForUpdatesAsync();
 
         if (_steam is null)
         {
@@ -116,9 +116,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposab
         private set
         {
             if (!Set(ref _isBusy, value)) return;
+            OnPropertyChanged(nameof(CanCancel));
             Requery();
         }
     }
+
+    public bool CanCancel => IsBusy && _work is { IsCancellationRequested: false };
 
     private string _stepName = "Ready";
     public string StepName { get => _stepName; private set => Set(ref _stepName, value); }
@@ -200,9 +203,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposab
 
     // Updates
 
-    private async Task CheckForUpdatesAsync(bool offerToInstall)
+    private async Task CheckForUpdatesAsync()
     {
-        if (_pendingUpdate is not null && offerToInstall)
+        if (_pendingUpdate is not null)
         {
             await InstallPendingUpdateAsync();
             return;
@@ -235,8 +238,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposab
             UpdateStatus = $"Update {_pendingUpdate.TargetFullRelease.Version} is available";
             Log_($"Launcher update {_pendingUpdate.TargetFullRelease.Version} is available.", LogLevel.Good);
 
-            if (offerToInstall)
-                await InstallPendingUpdateAsync();
+            await InstallPendingUpdateAsync();
+        }
+        catch (System.Net.Http.HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            UpdateStatus = "No accessible update release";
+            Log_("The update repository is private or has no published release yet. Game downloads are still available.", LogLevel.Dim);
         }
         catch (Exception ex)
         {
@@ -267,13 +274,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposab
             return;
         }
 
+        using var work = new CancellationTokenSource();
+        _work = work;
         IsBusy = true;
+        OnPropertyChanged(nameof(CanCancel));
+        Requery();
         StepName = $"Downloading launcher {version}";
         ProgressIndeterminate = false;
         Progress = 0;
-
-        _work?.Dispose();
-        _work = new CancellationTokenSource();
 
         try
         {
@@ -284,9 +292,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposab
                     Progress = value;
                     StatusLine = $"{value}%";
                 }),
-                _work.Token);
+                work.Token);
         }
-        catch (OperationCanceledException) when (_work.IsCancellationRequested)
+        catch (OperationCanceledException) when (work.IsCancellationRequested)
         {
             UpdateStatus = $"Update {version} is available";
             Log_("Launcher update cancelled.", LogLevel.Warn);
@@ -299,7 +307,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposab
         }
         finally
         {
+            _work = null;
             IsBusy = false;
+            ProgressIndeterminate = false;
+            StepName = "Ready";
             StatusLine = "";
             Requery();
         }
@@ -332,11 +343,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposab
         IsLogVisible = true;
 
         await RunGuarded(recheck ? "Verifying preserved downloads" : "Preparing",
-            async cancellationToken =>
+            cancellationToken =>
             {
                 TrySaveConfig();
-                await new PreservationPipeline(Config, _steam, _authorization!, this)
-                    .RunAsync(recheck, cancellationToken).ConfigureAwait(false);
+                // Existing-file hashing can run before the pipeline's first await.
+                // Start it on a worker so the window and Cancel remain responsive.
+                return Task.Run(() => new PreservationPipeline(Config, _steam, _authorization!, this)
+                    .RunAsync(recheck, cancellationToken), cancellationToken);
             }).ConfigureAwait(false);
     }
 
@@ -353,22 +366,27 @@ public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposab
         Log_($"Storage root: {Config.StorageRoot}", LogLevel.Dim);
     }
 
-    private void OpenStorageFolder()
-    {
-        Directory.CreateDirectory(Config.StorageRoot);
-        Process.Start(new ProcessStartInfo("explorer.exe", $"\"{Config.StorageRoot}\"")
-        {
-            UseShellExecute = true,
-        });
-    }
+    private void OpenStorageFolder() => OpenFolder(Config.StorageRoot, create: true);
 
     private void OpenSteamFolder()
     {
         if (_steam is null) return;
-        Process.Start(new ProcessStartInfo("explorer.exe", $"\"{_steam.Root}\"")
+        OpenFolder(_steam.Root);
+    }
+
+    private void OpenFolder(string path, bool create = false)
+    {
+        try
         {
-            UseShellExecute = true,
-        });
+            path = Path.GetFullPath(path);
+            if (create) Directory.CreateDirectory(path);
+            var info = new ProcessStartInfo(Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"))
+                { UseShellExecute = false };
+            info.ArgumentList.Add(path);
+            Process.Start(info)?.Dispose();
+        }
+        catch (Exception ex) { Log_($"Could not open the folder: {ex.Message}", LogLevel.Warn); }
     }
 
     private void OpenLogFile()
@@ -379,10 +397,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposab
             return;
         }
 
-        Process.Start(new ProcessStartInfo(CrashLog.Path) { UseShellExecute = true });
+        try { Process.Start(new ProcessStartInfo(CrashLog.Path) { UseShellExecute = true })?.Dispose(); }
+        catch (Exception ex) { Log_($"Could not open the log: {ex.Message}", LogLevel.Warn); }
     }
 
-    public void RefreshState() => _ui.Post(() =>
+    private void RefreshState(bool resetStep = true) => _ui.Post(() =>
     {
         CompletedArchives = PreservationPipeline.CompletedCount(Config);
         SteamStatus = DescribeSteam();
@@ -390,7 +409,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposab
         OnPropertyChanged(nameof(AuthorizedAccount));
         OnPropertyChanged(nameof(DownloadButtonText));
         RefreshFacts();
-        if (!IsBusy)
+        if (!IsBusy && resetStep)
             StepName = !HasAuthorization ? "Authorize Steam to continue" : DownloadsComplete ? "Downloads preserved" : "Ready";
         Requery();
     });
@@ -425,20 +444,20 @@ public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposab
 
     private async Task RunGuarded(string description, Func<CancellationToken, Task> body)
     {
-        _work?.Dispose();
-        _work = new CancellationTokenSource();
+        using var work = new CancellationTokenSource();
+        _work = work;
         IsBusy = true;
         Step(description);
 
         try
         {
-            await body(_work.Token).ConfigureAwait(false);
+            await body(work.Token).ConfigureAwait(false);
+            Step("Complete");
             _ui.Post(() => StatusLine = "");
         }
-        catch (OperationCanceledException) when (_work.IsCancellationRequested)
+        catch (OperationCanceledException) when (work.IsCancellationRequested)
         {
-            Log_("Cancelled. Steam may still be finishing the current download - use its own "
-                 + "downloads page if you want to stop it there too.", LogLevel.Warn);
+            Log_("Launcher operation cancelled. A transfer already handed to Steam may continue.", LogLevel.Warn);
             Step("Cancelled");
         }
         catch (OperationCanceledException ex)
@@ -457,8 +476,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposab
         }
         finally
         {
-            _ui.Post(() => IsBusy = false);
-            RefreshState();
+            _work = null;
+            _ui.Post(() => { IsBusy = false; ProgressIndeterminate = false; });
+            RefreshState(resetStep: false);
         }
     }
 
@@ -549,6 +569,5 @@ public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposab
     public void Dispose()
     {
         _work?.Cancel();
-        _work?.Dispose();
     }
 }

@@ -4,8 +4,7 @@ using System.Text;
 namespace KpcLauncher.Core;
 
 /// <summary>
-/// Always-on file log. Written from the first line of Main so that a failure before the
-/// window exists still leaves something to read.
+/// Local file log started during application startup, before the main window is created.
 /// </summary>
 public static class CrashLog
 {

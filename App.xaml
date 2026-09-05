@@ -6,10 +6,8 @@
     <Application.Resources>
 
         <!-- Palette ======================================================= -->
-        <Color x:Key="AccentColor">#5B7CFA</Color>
         <SolidColorBrush x:Key="Bg"       Color="#0C0E13"/>
         <SolidColorBrush x:Key="Chrome"   Color="#12151D"/>
-        <SolidColorBrush x:Key="Surface"  Color="#161A24"/>
         <SolidColorBrush x:Key="Surface2" Color="#1E2331"/>
         <SolidColorBrush x:Key="Line"     Color="#272E3E"/>
         <SolidColorBrush x:Key="Fg"       Color="#E8EBF2"/>
@@ -247,5 +245,4 @@
 
     </Application.Resources>
 </Application>
-
 

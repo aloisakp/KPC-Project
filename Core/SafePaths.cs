@@ -6,15 +6,22 @@ internal static class SafePaths
 {
     public static string Normalize(string path) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
     public static bool Same(string a, string b) => Normalize(a).Equals(Normalize(b), StringComparison.OrdinalIgnoreCase);
-    public static bool Within(string path, string root) => Same(path, root) ||
-        Normalize(path).StartsWith(Normalize(root) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    public static bool Within(string path, string root)
+    {
+        var parent = Normalize(root);
+        if (!Path.EndsInDirectorySeparator(parent)) parent += Path.DirectorySeparatorChar;
+        return Same(path, root) || Normalize(path).StartsWith(parent, StringComparison.OrdinalIgnoreCase);
+    }
 
     public static void NoLinks(string path)
     {
         for (var item = new DirectoryInfo(Path.GetFullPath(path)); item is not null; item = item.Parent)
         {
-            if ((item.Exists || File.Exists(item.FullName)) &&
-                (File.GetAttributes(item.FullName) & FileAttributes.ReparsePoint) != 0)
+            FileAttributes attributes;
+            try { attributes = File.GetAttributes(item.FullName); }
+            catch (FileNotFoundException) { continue; }
+            catch (DirectoryNotFoundException) { continue; }
+            if ((attributes & FileAttributes.ReparsePoint) != 0)
                 throw new SteamDownloadException("Choose a regular folder: links and junctions are not supported for downloads.");
         }
     }

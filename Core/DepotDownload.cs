@@ -1,5 +1,3 @@
-using System.Globalization;
-using System.IO;
 using System.Text.RegularExpressions;
 
 namespace KpcLauncher.Core;
@@ -24,7 +22,7 @@ public sealed partial class DepotDownload(SteamInstall steam, SteamAuthorization
     /// <summary>How long Steam may go without acknowledging the command before giving up.</summary>
     private static readonly TimeSpan AcknowledgeTimeout = TimeSpan.FromMinutes(3);
 
-    /// <summary>How long the transfer may go with no log activity and no growth on disk.</summary>
+    /// <summary>How long the transfer may go without a fresh Steam activity sample.</summary>
     private static readonly TimeSpan StallTimeout = TimeSpan.FromMinutes(10);
 
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
@@ -37,12 +35,6 @@ public sealed partial class DepotDownload(SteamInstall steam, SteamAuthorization
 
     [GeneratedRegex(@"Depot download failed : (?<reason>.+)")]
     private static partial Regex FailedPattern();
-
-    [GeneratedRegex(@"AppID (?<app>\d+) update started : download \d+/(?<total>\d+)")]
-    private static partial Regex TransferTotalPattern();
-
-    [GeneratedRegex(@"Current download rate: (?<mbps>[\d.]+) Mbps")]
-    private static partial Regex RatePattern();
 
     /// <summary>
     /// Runs the download to completion and returns the directory Steam reported writing.
@@ -63,12 +55,10 @@ public sealed partial class DepotDownload(SteamInstall steam, SteamAuthorization
         reporter.Step($"Asking Steam for {label}");
         steam.DownloadDepot(appId, depotId, manifestId, authorization);
 
-        var started = DateTime.UtcNow;
-        var lastChange = DateTime.UtcNow;
+        var started = DateTime.Now;
+        var lastChange = started;
         var acknowledged = false;
-        long transferTotal = 0;
-        double mbps = 0;
-        var rateObserved = DateTime.MinValue;
+        var progress = new SteamTransferProgress(appId, depotId, manifestId);
 
         while (true)
         {
@@ -97,7 +87,7 @@ public sealed partial class DepotDownload(SteamInstall steam, SteamAuthorization
                     uint.TryParse(begun.Groups["depot"].Value, out var begunDepot) && begunDepot == depotId)
                 {
                     acknowledged = true;
-                    lastChange = DateTime.UtcNow;
+                    lastChange = DateTime.Now;
                     reporter.Log(
                         $"Steam is downloading {label}: {begun.Groups["files"].Value} files, "
                         + $"{begun.Groups["mb"].Value} MB.", LogLevel.Info);
@@ -105,50 +95,22 @@ public sealed partial class DepotDownload(SteamInstall steam, SteamAuthorization
             }
 
             foreach (var line in content.ReadNewLines())
-            {
-                if (TransferTotalPattern().Match(line) is { Success: true } stage &&
-                    uint.TryParse(stage.Groups["app"].Value, out var reportedApp) && reportedApp == appId &&
-                    long.TryParse(stage.Groups["total"].Value, out var total))
-                {
-                    transferTotal = total;
-                    acknowledged = true;
-                }
+                progress.Observe(line, DateTime.Now);
+            if (progress.LastActivity > lastChange) lastChange = progress.LastActivity;
 
-                if (RatePattern().Match(line) is { Success: true } rate)
-                {
-                    double.TryParse(rate.Groups["mbps"].Value, CultureInfo.InvariantCulture, out mbps);
-                    rateObserved = DateTime.UtcNow;
-                    if (mbps > 0) lastChange = DateTime.UtcNow;
-                }
-            }
+            reporter.Progress(progress.Report(label, DateTime.Now));
 
-            // Steam preallocates full-sized files before their chunks arrive. File length
-            // cannot measure transferred bytes. The available log reports total size and
-            // aggregate Steam activity, but no reliable per-depot completed-byte counter.
-            reporter.Progress(new StepProgress(
-                $"Downloading {label}",
-                0,
-                0,
-                DescribeActivity(transferTotal, DateTime.UtcNow - rateObserved < TimeSpan.FromSeconds(90) ? mbps : 0)));
-
-            if (!acknowledged && DateTime.UtcNow - started > AcknowledgeTimeout)
+            if (!acknowledged && DateTime.Now - started > AcknowledgeTimeout)
                 throw new SteamDownloadException(
                     "Steam did not react to the download request. Make sure Steam is running and signed in.");
 
-            if (acknowledged && DateTime.UtcNow - lastChange > StallTimeout)
+            if (acknowledged && DateTime.Now - lastChange > StallTimeout)
                 throw new SteamDownloadException(
                     $"The download stopped making progress for {StallTimeout.TotalMinutes:0} minutes. "
                     + "Check Steam's own downloads page, then try again.");
 
             await Task.Delay(PollInterval, cancellationToken).ConfigureAwait(false);
         }
-    }
-
-    internal static string DescribeActivity(long total, double mbps)
-    {
-        var size = total > 0 ? $"{Human.Bytes(total)} requested - " : "";
-        var activity = mbps > 0 ? $" - Steam activity: {mbps:0} Mbps" : "";
-        return size + "waiting for Steam to finish" + activity;
     }
 
     /// <summary>Turns Steam's terse console wording into something a player can act on.</summary>

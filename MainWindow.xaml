@@ -227,8 +227,9 @@
                         <Button Content="Log" Style="{StaticResource Ghost}"
                                 Command="{Binding ToggleLogCommand}" Margin="0,0,8,0" Padding="12,8"/>
                         <Button Content="Cancel" Style="{StaticResource Ghost}"
+                                ToolTip="Cancels launcher work. Steam may continue a transfer already requested."
                                 Command="{Binding CancelCommand}" Margin="0,0,8,0"
-                                Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}"/>
+                                Visibility="{Binding CanCancel, Converter={StaticResource BoolToVis}}"/>
                         <Button Content="{Binding DownloadButtonText}" Style="{StaticResource Primary}"
                                 Command="{Binding DownloadCommand}"/>
                     </StackPanel>

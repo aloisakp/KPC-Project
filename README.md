@@ -34,6 +34,13 @@ Storage must be separate from Steam and launcher directories. Links and junction
 are rejected. Downloads remain subject to Steam's availability and entitlement
 checks; the launcher cannot grant access to unavailable content.
 
+The download bar is labeled **Estimated**. It uses the requested compressed size
+and Steam's periodic speed readings, stops advancing when readings go stale, and
+waits below 100% until Steam confirms completion. Detected overlapping downloads
+disable the estimate because Steam reports their combined speed. File preallocation is
+never counted as downloaded data. Copying and SHA-256 verification use measured
+byte progress instead. The window and Cancel remain responsive during these steps.
+
 ## Steam authorization
 
 Browser authorization uses [Steam OpenID 2.0](https://partner.steamgames.com/doc/features/auth).
@@ -55,8 +62,11 @@ Missing, expired, disconnected, or mismatched identity blocks further requests.
 This prevents accidental mismatches; Steam remains responsible for access control.
 Software modified by its own user cannot be constrained by a local launcher check.
 
-Cancelling stops launcher monitoring. Steam may continue the transfer; manage it
-in Steam before retrying or switching accounts. Browser cancellation and timeout
+Cancelling stops launcher work, including an in-progress local copy or verification.
+Steam may continue a transfer already requested; let it finish or close Steam
+before starting another transfer or switching accounts. The launcher blocks a retry
+while its current-process Steam log still shows a pending depot request. If Steam
+reported an ambiguous failure, restart Steam before retrying. Browser cancellation and timeout
 leave **Authorize Steam** available. If the desktop identity cannot be read,
 restart Steam, sign in online, and retry. The launcher fails closed if a Steam
 update changes its identity/log format.
@@ -87,7 +97,7 @@ Authenticode signature, so Windows may show an unknown-publisher warning. Velopa
 packaging includes timestamps, so local rebuilds need not be byte-identical.
 
 The launcher checks for updates at startup and asks before installing them.
-See [BUILDING.md](BUILDING.md), [SECURITY.md](SECURITY.md), and
+See [BUILDING.md](BUILDING.md), [SECURITY.md](SECURITY.md), [source review](REVIEW.md), and
 [third-party notices](THIRD-PARTY-NOTICES.md).
 
 This unofficial, non-commercial community project is not affiliated with or

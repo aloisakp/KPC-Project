@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$Version = "0.1.0",
-    [string]$SignParams = ""
+    [string]$SignParams = "",
+    [string]$ArtifactDirectory = "artifacts"
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,7 +26,7 @@ else {
     $dotnetPath = $dotnet.Source
 }
 
-$artifactRoot = Join-Path $here 'artifacts'
+$artifactRoot = [IO.Path]::GetFullPath((Join-Path $here $ArtifactDirectory))
 $publishDir = Join-Path $artifactRoot 'publish'
 $releaseDir = Join-Path $artifactRoot 'releases'
 
@@ -35,8 +36,19 @@ if (-not $resolvedArtifacts.StartsWith($resolvedHere + '\', [StringComparison]::
     throw "Refusing to clean an artifact directory outside the repository: $resolvedArtifacts"
 }
 
-if (Test-Path -LiteralPath $artifactRoot) {
-    Remove-Item -LiteralPath $artifactRoot -Recurse -Force
+foreach ($buildDirectory in @($publishDir, $releaseDir, (Join-Path $artifactRoot 'build'))) {
+    $resolvedBuild = [IO.Path]::GetFullPath($buildDirectory)
+    if (-not $resolvedBuild.StartsWith($resolvedArtifacts + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to clean a build directory outside the artifact folder."
+    }
+    for ($item = [IO.DirectoryInfo]::new($resolvedBuild); $null -ne $item; $item = $item.Parent) {
+        if ($item.Exists -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw 'Build output paths must not contain links or junctions.'
+        }
+    }
+    if (Test-Path -LiteralPath $resolvedBuild) {
+        Remove-Item -LiteralPath $resolvedBuild -Recurse -Force
+    }
 }
 New-Item -ItemType Directory -Path $publishDir -Force | Out-Null
 New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null

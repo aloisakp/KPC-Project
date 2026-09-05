@@ -148,6 +148,69 @@ public sealed class SteamInstall
     }
 
     /// <summary>
+    /// A cancelled launcher can leave Steam downloading. Check Steam's current-process
+    /// console history before touching shared staging or issuing another request.
+    /// </summary>
+    public void RequireDepotIdle(uint appId, uint depotId)
+    {
+        // Injected test clients have no OS process; the parser is tested separately.
+        if (_download is not null) return;
+        var processes = Process.GetProcessesByName("steam");
+        try
+        {
+            var process = processes.FirstOrDefault(p => string.Equals(p.MainModule?.FileName,
+                Executable, StringComparison.OrdinalIgnoreCase));
+            if (process is null) throw new SteamDownloadException("Steam is not running. Restart Steam and try again.");
+            if (!File.Exists(ConsoleLog)) return; // First request before Steam has created this log.
+            using var stream = new FileStream(ConsoleLog, FileMode.Open, FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            // Read the full log: skipping a request while retaining its completion would
+            // incorrectly declare a busy depot idle. Steam rotates its own logs.
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+            if (HasPendingDepotDownload(reader, process.StartTime, appId, depotId, StagingDirectory(appId, depotId)))
+                throw new SteamDownloadException("Steam is still processing an earlier depot request. " +
+                    "Let it finish, or close and restart Steam, then retry Install. The staging files were left untouched.");
+        }
+        finally { foreach (var process in processes) process.Dispose(); }
+    }
+
+    internal static bool HasPendingDepotDownload(TextReader reader, DateTime processStarted,
+        uint appId, uint depotId, string staging)
+    {
+        var pending = 0;
+        var awaitingStart = false;
+        var requestPattern = new Regex(@"\+download_depot\s+" + appId + @"\s+" + depotId + @"\s+\d+(?=\s|""|$)",
+            RegexOptions.CultureInvariant);
+        string? line;
+        while ((line = reader.ReadLine()) is not null)
+        {
+            if (line.Length < 22 || line[0] != '[' || line[20] != ']' ||
+                !DateTime.TryParseExact(line.AsSpan(1, 19), "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out var at) || at < processStarted.AddSeconds(-2)) continue;
+            var message = line[22..];
+            if (message.StartsWith("ExecCommandLine:", StringComparison.Ordinal) && requestPattern.IsMatch(message))
+            {
+                pending++;
+                awaitingStart = true;
+            }
+            else if (message.StartsWith($"Downloading depot {depotId} (", StringComparison.Ordinal))
+            {
+                if (!awaitingStart) pending++; // Also recognize requests entered in Steam's console.
+                awaitingStart = false;
+            }
+            else if (Regex.Match(message, "^Depot download complete : \"(?<dir>.*)\" \\(manifest [0-9]+\\)") is { Success: true } complete &&
+                SafePaths.Same(complete.Groups["dir"].Value, staging))
+            {
+                pending = Math.Max(0, pending - 1);
+                awaitingStart = false;
+            }
+            // Failures omit the depot ID. Do not use an unrelated failure to declare the
+            // target idle; a restart clears unresolved requests from the old process.
+        }
+        return pending > 0;
+    }
+
+    /// <summary>
     /// Brings Steam to a state where it can accept a download. If a sign-in is needed it is
     /// Steam's own window that asks for it - that prompt belongs to Valve, and no credential
     /// passes through this launcher on its way there.
@@ -194,6 +257,7 @@ public sealed class SteamInstall
     public void DownloadDepot(uint appId, uint depotId, ulong manifestId, SteamAuthorization authorization)
     {
         RequireAccount(authorization);
+        RequireDepotIdle(appId, depotId);
         if (_download is not null) { _download(appId, depotId, manifestId); return; }
         var info = new ProcessStartInfo(Executable) { UseShellExecute = false, CreateNoWindow = true };
         info.ArgumentList.Add("+download_depot");

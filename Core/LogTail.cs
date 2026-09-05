@@ -13,6 +13,7 @@ public sealed class LogTail
     private readonly string _path;
     private long _offset;
     private string _partial = "";
+    private readonly Decoder _decoder = Encoding.UTF8.GetDecoder();
 
     private LogTail(string path, long offset)
     {
@@ -32,6 +33,7 @@ public sealed class LogTail
             // Steam truncated the log when it restarted; follow it from the beginning again.
             _offset = 0;
             _partial = "";
+            _decoder.Reset();
         }
 
         if (length == _offset) return [];
@@ -52,7 +54,9 @@ public sealed class LogTail
         }
 
         _offset += read;
-        var text = _partial + Encoding.UTF8.GetString(buffer, 0, read);
+        var characters = new char[Encoding.UTF8.GetMaxCharCount(read)];
+        var count = _decoder.GetChars(buffer, 0, read, characters, 0, flush: false);
+        var text = _partial + new string(characters, 0, count);
         var lines = text.Split('\n');
 
         // A trailing fragment means the last line is still being written; hold it over.

@@ -107,6 +107,19 @@ try
     Check(SteamInstall.ParseConnectedIdentity(Log, started, 124) is null, "registry and log disagreement blocked");
     Check(SteamInstall.ParseConnectedIdentity(Log, started.AddHours(2), 123) is null, "previous process log rejected");
     Check(SteamInstall.ParseConnectedIdentity(Log + "[2026-09-05 10:01:00] [Logged Off, 4, 7] [U:1:123] bye\n", started, 123) is null, "logout invalidates account");
+    var pendingFolder = Path.Combine(root, "steamapps", "content", "app_1", "depot_2");
+    var pendingRequest = "[2026-09-05 10:00:00] ExecCommandLine: \"steam.exe +download_depot 1 2 3\"\n";
+    var pendingStart = "[2026-09-05 10:00:01] Downloading depot 2 (2 files, 2 MB) ...\n";
+    var pendingEnd = $"[2026-09-05 10:00:02] Depot download complete : \"{pendingFolder}\" (manifest 3)\n";
+    bool Pending(string text, DateTime? since = null) => SteamInstall.HasPendingDepotDownload(
+        new StringReader(text), since ?? started, 1, 2, pendingFolder);
+    Check(Pending(pendingRequest), "queued Steam request blocks a competing download");
+    Check(Pending(pendingRequest + pendingStart), "cancelled launcher cannot overwrite active staging");
+    Check(!Pending(pendingRequest + pendingStart + pendingEnd), "completed Steam request releases the staging guard");
+    Check(Pending(pendingRequest + pendingStart + pendingRequest + pendingStart + pendingEnd), "one completion cannot clear two requests");
+    Check(!Pending(pendingRequest + pendingStart, started.AddHours(2)), "Steam restart clears previous-process pending requests");
+    Check(Pending(pendingRequest + pendingStart + "[2026-09-05 10:00:02] Depot download failed : unrelated\n"),
+        "unscoped Steam failure cannot clear the staging guard");
 
     Directory.CreateDirectory(Path.Combine(root, "logs"));
     ulong? currentAccount = Account + 1;
@@ -135,13 +148,54 @@ try
         steam = new SteamInstall(root, "unused", () => currentAccount, (_, _, _) =>
         {
             File.AppendAllText(steam.ConsoleLog, "Downloading depot 2 (1 files, 4 MB) ...\n");
-            File.AppendAllText(steam.ContentLog, "AppID 1 update started : download 0/4096, stage 0/4096\nCurrent download rate: 42.000 Mbps\n");
+            File.AppendAllText(steam.ContentLog, "AppID 1 update started : download 0/4096, stage 0/4096\nDownloading 4 chunks for depot 2 (3)\n");
         });
         try { await new DepotDownload(steam, authorization, progressReporter).RunAsync(1, 2, 3, "test", progressCancel.Token); }
         catch (OperationCanceledException) { }
-        Check(progressReporter.LastProgress is { Total: 0, Done: 0 }, "preallocated files never show false 100 percent");
-        Check(progressReporter.LastProgress!.Detail.Contains("waiting for Steam to finish"), "download explicitly waits for Steam completion");
+        Check(progressReporter.LastProgress is { Total: 4096, Done: 0 }, "preallocated files never show false 100 percent");
+        Check(progressReporter.LastProgress!.Detail.Contains("Estimated"), "download estimate is clearly labeled");
     }
+
+    var clock = new DateTime(2026, 9, 5, 10, 0, 0);
+    SteamTransferProgress Transfer(long done = 0)
+    {
+        var progress = new SteamTransferProgress(1, 2, 3);
+        progress.Observe($"AppID 1 update started : download {done}/1000000000, stage 0/2000000000", clock);
+        progress.Observe("Downloading 2000 chunks for depot 2 (3)", clock);
+        return progress;
+    }
+    var transfer = Transfer();
+    transfer.Observe("Current download rate: 8.000 Mbps", clock.AddSeconds(10));
+    Check(transfer.Report("test", clock.AddSeconds(10)).Done == 10_000_000, "first Steam rate estimates elapsed transfer bytes");
+    Check(transfer.Report("test", clock.AddSeconds(20)).Done == 20_000_000, "bar advances between Steam log samples");
+    transfer.Observe("Current download rate: 0.000 Mbps", clock.AddSeconds(30));
+    Check(transfer.Report("test", clock.AddSeconds(40)).Done == 30_000_000, "zero rate stops advancing the bar");
+    transfer = Transfer();
+    transfer.Observe("Current download rate: 8.000 Mbps", clock.AddSeconds(10));
+    var stale = transfer.Report("test", clock.AddSeconds(100));
+    Check(stale.Done == 85_000_000 && transfer.Report("test", clock.AddSeconds(200)).Done == stale.Done,
+        "stale speed cannot generate unlimited progress");
+    Check(!stale.Detail.Contains("Mbps"), "stale speed is removed from the status line");
+    transfer = Transfer(50_000_000);
+    Check(transfer.Report("test", clock).Done == 50_000_000, "Steam resume byte count initializes the estimate");
+    transfer.Observe("Current download rate: 100000.000 Mbps", clock.AddSeconds(1));
+    var capped = transfer.Report("test", clock.AddSeconds(10));
+    Check(capped.Fraction == .95 && capped.Detail.Contains("waiting for Steam completion"), "estimate cannot claim completion");
+    transfer.Observe("AppID 99 update started : download 0/1000", clock.AddSeconds(11));
+    Check(transfer.Report("test", clock.AddSeconds(12)).Total == 0, "overlapping app download disables aggregate-rate estimate");
+    transfer = Transfer();
+    transfer.Observe("Downloading 20 chunks for depot 2 (4)", clock);
+    Check(transfer.Report("test", clock).Total == 0, "different manifest disables ambiguous estimate");
+    transfer = Transfer();
+    transfer.Observe("Current download rate: " + new string('9', 400) + " Mbps", clock);
+    Check(transfer.Report("test", clock.AddSeconds(5)).Done == 0, "non-finite rate is ignored");
+    transfer.Observe("[2099-01-01 10:00:00] Current download rate: 42.000 Mbps", clock);
+    Check(transfer.Report("test", clock.AddSeconds(5)).Done == 0, "future-dated log sample is ignored");
+    transfer.Observe("[2026-09-05 10:00:10] Current download rate: 8.000 Mbps", clock.AddSeconds(10.8));
+    transfer.Report("test", clock.AddSeconds(20.8));
+    transfer.Observe("[2026-09-05 10:00:20] Current download rate: 0.000 Mbps", clock.AddSeconds(21));
+    var stopped = transfer.Report("test", clock.AddSeconds(21)).Done;
+    Check(transfer.Report("test", clock.AddSeconds(30)).Done == stopped, "buffered rate samples still stop an extrapolated estimate");
 
     var archive = Path.Combine(root, "archive"); Directory.CreateDirectory(archive);
     var file = Path.Combine(archive, "data.bin"); File.WriteAllText(file, "original");
@@ -151,6 +205,33 @@ try
     Check(beforeHash.Files == afterHash.Files && beforeHash.Bytes == afterHash.Bytes && beforeHash.Digest != afterHash.Digest,
         "verification detects equal-size content tampering");
     Check(SafePaths.Within(Path.Combine(root, "archive"), root) && !SafePaths.Within(root + "-outside", root), "path containment uses directory boundary");
+    Check(SafePaths.Within(root, Path.GetPathRoot(root)!), "drive-root containment includes its children");
+    var copySource = Path.Combine(root, "copy-source");
+    Directory.CreateDirectory(copySource);
+    var originalBytes = Enumerable.Range(0, 3 * 1024 * 1024).Select(i => (byte)(i % 251)).ToArray();
+    File.WriteAllBytes(Path.Combine(copySource, "large.bin"), originalBytes);
+    using (var copyCancel = new CancellationTokenSource())
+    {
+        var copyTarget = Path.Combine(root, "cancelled-copy");
+        var copyReporter = new QuietReporter { OnProgress = _ => copyCancel.Cancel() };
+        try { await PreservationPipeline.CopyTreeAsync(copySource, copyTarget, copyReporter, copyCancel.Token); }
+        catch (OperationCanceledException) { }
+        Check(File.ReadAllBytes(Path.Combine(copySource, "large.bin")).SequenceEqual(originalBytes) &&
+            new FileInfo(Path.Combine(copyTarget, "large.bin")).Length < originalBytes.Length,
+            "cross-drive copy cancels within a file and preserves its source");
+    }
+    var copiedTarget = Path.Combine(root, "complete-copy");
+    await PreservationPipeline.CopyTreeAsync(copySource, copiedTarget, reporter, default);
+    Check(File.ReadAllBytes(Path.Combine(copiedTarget, "large.bin")).SequenceEqual(originalBytes), "cross-drive copy preserves all bytes");
+    var tailPath = Path.Combine(root, "unicode-log.txt");
+    var tail = LogTail.FromEnd(tailPath);
+    var unicodeLine = Encoding.UTF8.GetBytes("folder/日/complete\n");
+    File.WriteAllBytes(tailPath, unicodeLine[..8]);
+    Check(tail.ReadNewLines().Count == 0, "partial log line waits for its terminator");
+    using (var append = new FileStream(tailPath, FileMode.Append)) append.Write(unicodeLine[8..]);
+    Check(tail.ReadNewLines().Single() == "folder/日/complete", "UTF-8 paths survive fragmented log writes");
+    File.WriteAllText(tailPath, "new\n");
+    Check(tail.ReadNewLines().Single() == "new", "log truncation resets pending decoder state");
     var resultPage = SteamOpenId.BuildResultPage(true, "test-style-nonce");
     Check(resultPage.Contains("background:#0c0e13") && resultPage.Contains("Return to the launcher") &&
         resultPage.Contains("nonce=\"test-style-nonce\"") && !resultPage.Contains("<script"), "themed redirect needs no scripts or external resources");

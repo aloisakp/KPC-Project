@@ -16,6 +16,8 @@ Tests exercise the actual loopback HTTP listener with fragmented requests and a
 simulated Valve verification service, account mismatches/switches at the downloader
 boundary, completion paths, and archive integrity. They do not authenticate a real
 Steam user or prove a real depot download.
+Progress tests also exercise timed speed samples, pauses, stale logs, overlapping
+transfers, preallocated files, and cancellation partway through copying a file.
 
 Run bin/Release/net8.0-windows/win-x64/KpcLauncher.exe for a live check. On a new
 installation, the browser must open Steam automatically. Complete authorization on
@@ -29,6 +31,8 @@ A real transfer additionally requires a Steam entitlement and disk space.
 ```
 
 The self-contained installer, update package and feed appear in artifacts/releases.
+Use -ArtifactDirectory artifacts/local-check for a separate local build. Packaging
+cleans only its publish, releases and build subdirectories; it keeps other artifacts.
 Code signing is optional through -SignParams; never commit certificates, private
 keys or credentials. Without a signing identity the output is unsigned, as stated
 in the README and release notes.
