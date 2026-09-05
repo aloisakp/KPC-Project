@@ -1,0 +1,11 @@
+bin/
+obj/
+artifacts/
+.vs/
+*.user
+*.suo
+*.pfx
+*.snk
+*.dat
+*.log
+advisories.json
