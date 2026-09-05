@@ -11,11 +11,8 @@ your installed Steam client. The launcher does not combine files or launch the g
 [Latest release notes](https://github.com/aloisakp/KPC-Project/releases/latest) ·
 [All releases](https://github.com/aloisakp/KPC-Project/releases)
 
-The latest links become available once the first release is published. Until then,
-use the [build instructions](BUILDING.md) to build locally.
-The installer is KPCLauncher-win-Setup.exe; the .nupkg and
-releases.win.json assets are for the automatic updater. Private repositories and
-draft releases require GitHub access and are not a public update channel.
+To review the code and build the launcher yourself, follow the
+[build instructions](BUILDING.md).
 
 Windows 10 or later, an installed Steam client, an internet connection, and an
 account entitled to download KurtzPel are required. Allow around 60 GB for the two
@@ -44,15 +41,6 @@ waits below 100% until Steam confirms completion. Detected overlapping downloads
 disable the estimate because Steam reports their combined speed. File preallocation is
 never counted as downloaded data. Copying and SHA-256 verification use measured
 byte progress instead. The window and Cancel remain responsive during these steps.
-
-Steam downloads compressed chunks and expands them into the game files. Archive A,
-for example, transfers about 10.94 GB of compressed data and occupies 26.88 GB on
-disk. Download status therefore says **compressed**, while verification says
-**on disk**. This is [how SteamPipe delivers content](https://partner.steamgames.com/doc/sdk/uploading).
-
-The log panel starts closed and opens or closes only when you press **Log**.
-Starting downloads, verifying files, and errors do not change that choice. Logging
-to the local file continues while the panel is closed.
 
 ## Steam authorization
 
@@ -98,7 +86,7 @@ Compare it with the output of:
 Get-FileHash .\KPCLauncher-win-Setup.exe -Algorithm SHA256
 ```
 
-Public-repository release builds also produce GitHub build-provenance attestations:
+You can also verify the release's build provenance:
 
 ```powershell
 gh attestation verify KPCLauncher-win-Setup.exe --repo aloisakp/KPC-Project
