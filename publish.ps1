@@ -1,8 +1,9 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.2.0",
+    [string]$Version = "0.3.0",
     [string]$SignParams = "",
-    [string]$ArtifactDirectory = "artifacts"
+    [string]$ArtifactDirectory = "artifacts",
+    [switch]$ExecutableOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -36,7 +37,9 @@ if (-not $resolvedArtifacts.StartsWith($resolvedHere + '\', [StringComparison]::
     throw "Refusing to clean an artifact directory outside the repository: $resolvedArtifacts"
 }
 
-foreach ($buildDirectory in @($publishDir, $releaseDir, (Join-Path $artifactRoot 'build'))) {
+$buildDirectories = @($publishDir, (Join-Path $artifactRoot 'build'))
+if (-not $ExecutableOnly) { $buildDirectories += $releaseDir }
+foreach ($buildDirectory in $buildDirectories) {
     $resolvedBuild = [IO.Path]::GetFullPath($buildDirectory)
     if (-not $resolvedBuild.StartsWith($resolvedArtifacts + '\', [StringComparison]::OrdinalIgnoreCase)) {
         throw "Refusing to clean a build directory outside the artifact folder."
@@ -51,10 +54,11 @@ foreach ($buildDirectory in @($publishDir, $releaseDir, (Join-Path $artifactRoot
     }
 }
 New-Item -ItemType Directory -Path $publishDir -Force | Out-Null
-New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
-
-& $dotnetPath tool restore
-if ($LASTEXITCODE -ne 0) { throw 'Failed to restore the Velopack command-line tool.' }
+if (-not $ExecutableOnly) {
+    New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+    & $dotnetPath tool restore
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to restore the Velopack command-line tool.' }
+}
 
 & $dotnetPath publish (Join-Path $here 'KpcLauncher.csproj') `
     -c Release `
@@ -71,6 +75,12 @@ if ($LASTEXITCODE -ne 0) { throw 'dotnet publish failed.' }
 $publishedFiles = @(Get-ChildItem -LiteralPath $publishDir -Recurse -File)
 if ($publishedFiles.Count -ne 1 -or $publishedFiles[0].Name -ne 'KpcLauncher.exe') {
     throw 'Publish must produce exactly one self-contained KpcLauncher.exe.'
+}
+
+if ($ExecutableOnly) {
+    Write-Host "Local test executable: $($publishedFiles[0].FullName)"
+    Write-Host 'No installer, update feed or release package was created.'
+    return
 }
 
 $packArguments = @(

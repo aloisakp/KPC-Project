@@ -44,6 +44,28 @@ IPv6 endpoint.
 updates. A changed merge version requires another merge; hook-only updates are
 received on Play. Private updates do not require another GitHub launcher release.
 
+## PvP beta
+
+The current private game update supports **Normal Match (1 vs 1)** for authorized
+testers. Both players queue for the same mode and accept the Ready screen. The
+server selects one player's local host at random; the other player connects through
+an encrypted Cloudflare TURN relay. The match currently uses the Road to Grand
+Chase arena and rules. Two-player combat and returning from the match have been
+tested; gameplay smoothness is still being improved.
+
+Version 0.3.0 is the public beta baseline for that tested setup. The existing 0.2.0
+signed runtime host is also compatible with this private update. Restart the game
+through Play to receive current runtime instructions; a launcher version alone
+does not select an old or new game runtime.
+
+**2v2, 4v4 and other PvP modes are not enabled by this release.** They need server
+and private runtime work, including support for multiple remote players. Those
+components can be updated through the existing signed delivery mechanism without
+a public launcher release for each mode. Launcher UI, trust configuration or worker
+interface changes can still require a new executable. Tester access remains required.
+
+## Storage and downloads
+
 Choose storage on Steam's drive for fast moves instead of cross-drive copies.
 Storage must be separate from Steam and launcher directories. Links and junctions
 are rejected. Downloads remain subject to Steam's availability and entitlement

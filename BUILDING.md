@@ -27,12 +27,22 @@ A real transfer additionally requires a Steam entitlement and disk space.
 ## Packaging
 
 ```powershell
-./publish.ps1 -Version 0.2.0
+./publish.ps1 -Version 0.3.0
 ```
 
 The self-contained installer, update package and feed appear in artifacts/releases.
 Use -ArtifactDirectory artifacts/local-check for a separate local build. Packaging
 cleans only its publish, releases and build subdirectories; it keeps other artifacts.
+For a shareable local test executable without creating installer/update packages:
+
+```powershell
+./publish.ps1 -Version 0.3.0 -ArtifactDirectory artifacts/pvp-local -ExecutableOnly
+```
+
+The result is `artifacts/pvp-local/publish/KpcLauncher.exe`. This mode leaves
+existing release packages alone. It retains the public tester gate and signed
+in-memory package host; PvP runtime changes belong in the private tester package.
+
 Code signing is optional through -SignParams; never commit certificates, private
 keys or credentials. Without a signing identity the output is unsigned, as stated
 in the README and release notes.
@@ -43,6 +53,18 @@ recipes, builder assemblies, hooks, databases, code registers and signing privat
 keys belong outside this repository. Do not copy private service artifacts into
 public release assets. Changing the trust key or endpoint requires a launcher
 release; routine private instruction updates do not.
+
+Matchmaking, player counts, host selection, TURN connections and game hooks live
+in the server and signed private runtime. The public package host loads the current
+managed worker and assets without interpreting a mission or peer roster. Extending
+1v1 to team modes therefore belongs in those private components, within the existing
+package format and worker entry point. It does not require embedding each mode in
+the public launcher. Team modes still require implementation and live validation.
+
+Keep the public worker interface, trust configuration and supported .NET runtime
+compatible when publishing private updates. If one must change, use the signed
+minimum-launcher-version requirement and publish a new launcher. A changed game
+file layout uses a new merge version; runtime-only changes are received on Play.
 
 The application ID remains KPCLauncher for updater compatibility. Development
 builds do not apply Velopack updates; use an installed build to test that path.
