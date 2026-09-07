@@ -16,12 +16,13 @@
     <ApplicationIcon>Assets\launcher.ico</ApplicationIcon>
     <InvariantGlobalization>false</InvariantGlobalization>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Product>KPC Launcher</Product>
-    <Description>Download preservation through Steam with browser account authorization.</Description>
+    <Description>Steam downloads and server-authorized community testing.</Description>
   </PropertyGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Assets\tester-signing-public.pem" LogicalName="KpcLauncher.tester-signing-public.pem" />
     <PackageReference Include="Velopack" Version="1.2.0" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>

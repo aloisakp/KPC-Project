@@ -27,7 +27,7 @@ A real transfer additionally requires a Steam entitlement and disk space.
 ## Packaging
 
 ```powershell
-./publish.ps1 -Version 0.1.0
+./publish.ps1 -Version 0.2.0
 ```
 
 The self-contained installer, update package and feed appear in artifacts/releases.
@@ -36,6 +36,13 @@ cleans only its publish, releases and build subdirectories; it keeps other artif
 Code signing is optional through -SignParams; never commit certificates, private
 keys or credentials. Without a signing identity the output is unsigned, as stated
 in the README and release notes.
+
+The tester signing **public** key in Assets/tester-signing-public.pem must be
+included. The launcher contains the generic signed-package host only. Private
+recipes, builder assemblies, hooks, databases, code registers and signing private
+keys belong outside this repository. Do not copy private service artifacts into
+public release assets. Changing the trust key or endpoint requires a launcher
+release; routine private instruction updates do not.
 
 The application ID remains KPCLauncher for updater compatibility. Development
 builds do not apply Velopack updates; use an installed build to test that path.

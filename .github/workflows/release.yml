@@ -103,21 +103,8 @@ jobs:
           $provenance = if ($env:PRIVATE_REPOSITORY -eq 'false') {
             "Includes GitHub build provenance. Verify with: gh attestation verify KPCLauncher-win-Setup.exe --repo $env:GITHUB_REPOSITORY"
           } else { 'Private draft build: no public provenance attestation was generated.' }
-          $notes = @"
-          Steam now authorizes your account in the browser on first launch. Steam itself downloads
-          the files; the launcher checks that its connected account matches your authorization.
-
-          - Removed the previous QR, credential and direct CDN download implementations.
-          - Rejects mismatched accounts and invalid browser callbacks.
-          - Checks archive content with SHA-256 receipts and preserves replaced folders.
-          - Download preservation only; no game files are included.
-
-          Download KPCLauncher-win-Setup.exe. Windows installer is currently unsigned.
-          SHA256SUMS.txt contains checksums for all generated release assets.
-
-          Built from $env:GITHUB_SHA by https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID
-          $provenance
-          "@
+          $releaseNotes = Get-Content -LiteralPath "RELEASE-NOTES-$version.md" -Raw
+          $notes = $releaseNotes + "`n`nBuilt from $env:GITHUB_SHA by https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID`n$provenance`n"
           $notesFile = Join-Path $env:RUNNER_TEMP 'release-notes.md'
           Set-Content -LiteralPath $notesFile -Value $notes -Encoding utf8
           $existing = gh release view $tag --json isDraft --jq '.isDraft' 2>$null

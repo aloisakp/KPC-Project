@@ -15,7 +15,8 @@ public sealed class PreservationPipeline(
     LauncherConfig config,
     SteamInstall steam,
     SteamAuthorization authorization,
-    IReporter reporter)
+    IReporter reporter,
+    Func<ArchiveSpec, CancellationToken, Task>? onArchiveReady = null)
 {
     private const string CompletionStamp = ".kpdl-complete";
     private const string StagingMarker = ".kpc-staging";
@@ -42,9 +43,12 @@ public sealed class PreservationPipeline(
         Directory.CreateDirectory(Path.GetDirectoryName(lockPath)!);
         using var downloadLock = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
 
-        var needed = LauncherConfig.RequiredArchives
-            .Where(archive => !Survives(archive, verifyExisting, cancellationToken))
-            .ToList();
+        var needed = new List<ArchiveSpec>();
+        foreach (var archive in LauncherConfig.RequiredArchives)
+        {
+            if (!Survives(archive, verifyExisting, cancellationToken)) needed.Add(archive);
+            else if (onArchiveReady is not null) await onArchiveReady(archive, cancellationToken).ConfigureAwait(false);
+        }
 
         if (needed.Count == 0)
         {
@@ -86,6 +90,7 @@ public sealed class PreservationPipeline(
             WriteStamp(directory, archive, cancellationToken);
             ClearStagingMarker(staging);
             reporter.Log($"{archive.Label} preserved in {directory}", LogLevel.Good);
+            if (onArchiveReady is not null) await onArchiveReady(archive, cancellationToken).ConfigureAwait(false);
         }
 
         reporter.Step("Preservation complete");
@@ -194,6 +199,15 @@ public sealed class PreservationPipeline(
     /// Reads a completion stamp. Older stamps held only the manifest id as plain text, so those
     /// are still accepted and simply carry no counts to verify against.
     /// </summary>
+    internal static bool HasVerifiedReceipt(LauncherConfig config, string manifest)
+    {
+        var archive = LauncherConfig.RequiredArchives.SingleOrDefault(a => a.ManifestId.ToString() == manifest);
+        if (archive is null) return false;
+        var stamp = ReadStamp(config.ArchiveDirectory(archive));
+        return stamp is { Files: > 0, Bytes: > 0, ContentSha256: not null } && stamp.Manifest == manifest &&
+            System.Text.RegularExpressions.Regex.IsMatch(stamp.ContentSha256, "^[A-Fa-f0-9]{64}$");
+    }
+
     private static ArchiveStamp? ReadStamp(string directory)
     {
         try

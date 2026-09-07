@@ -120,9 +120,9 @@
                             BorderBrush="{StaticResource Line}" BorderThickness="1" MaxWidth="720"
                             HorizontalAlignment="Left">
                         <StackPanel>
-                            <TextBlock Text="UNDER CONSTRUCTION" Style="{StaticResource Label}"
+                            <TextBlock Text="TESTER ACCESS" Style="{StaticResource Label}"
                                        Foreground="{StaticResource Warn}"/>
-                            <TextBlock Text="Download preservation only. Additional launcher features are not available yet."
+                            <TextBlock Text="Normal Steam downloads and verification are available without a tester code. Enter your code in Settings to unlock Merge and Play."
                                        FontSize="15" TextWrapping="Wrap"/>
                             <TextBlock Text="{Binding UpdateStatus}" Style="{StaticResource Sub}"
                                        Margin="0,6,0,0"/>
@@ -156,7 +156,7 @@
                           Visibility="{Binding IsSettings, Converter={StaticResource BoolToVis}}">
                 <StackPanel Margin="46,32,46,32" MaxWidth="760" HorizontalAlignment="Left">
                     <TextBlock Text="Storage location" Style="{StaticResource H2}"/>
-                    <TextBlock Text="The two required file sets are stored separately and are never combined or modified."
+                    <TextBlock Text="The two downloads stay intact. Tester builds are prepared in a separate folder here."
                                Style="{StaticResource Sub}" Margin="0,4,0,10" TextWrapping="Wrap"/>
                     <Grid Margin="0,0,0,26">
                         <Grid.ColumnDefinitions>
@@ -170,6 +170,17 @@
                         <Button Grid.Column="2" Content="Open" Margin="8,0,0,0"
                                 Style="{StaticResource Ghost}" Command="{Binding OpenFolderCommand}"/>
                     </Grid>
+
+                    <TextBlock Text="Tester access" Style="{StaticResource H2}"/>
+                    <TextBlock Text="Codes are linked to your verified Steam account. Tester access is checked before merging and playing. Normal Steam downloads and verification do not need a code."
+                               Style="{StaticResource Sub}" Margin="0,4,0,10" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding TesterAccessStatus}" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBox Text="{Binding TesterCode, UpdateSourceTrigger=PropertyChanged}" MaxLength="80" ToolTip="Paste your tester code"/>
+                        <Button Grid.Column="1" Content="Redeem code" Command="{Binding RedeemTesterCodeCommand}" Margin="8,0,0,0"/>
+                    </Grid>
+                    <Button Content="Check tester access" Command="{Binding CheckTesterAccessCommand}" HorizontalAlignment="Left" Margin="0,0,0,26"/>
 
                     <TextBlock Text="Launcher updates" Style="{StaticResource H2}"/>
                     <TextBlock Text="Updates are checked automatically when the launcher starts. Installing an update always requires your confirmation."
@@ -256,7 +267,9 @@
                                 Command="{Binding CancelCommand}" Margin="0,0,8,0"
                                 Visibility="{Binding CanCancel, Converter={StaticResource BoolToVis}}"/>
                         <Button Content="{Binding DownloadButtonText}" Style="{StaticResource Primary}"
-                                Command="{Binding DownloadCommand}"/>
+                                Command="{Binding DownloadCommand}" Margin="0,0,8,0"/>
+                        <Button Content="{Binding MergeButtonText}" Command="{Binding MergeCommand}" Margin="0,0,8,0"/>
+                        <Button Content="Play" Style="{StaticResource Primary}" Command="{Binding PlayCommand}"/>
                     </StackPanel>
                 </Grid>
             </Border>

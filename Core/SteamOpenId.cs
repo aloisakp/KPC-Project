@@ -29,7 +29,9 @@ public static class SteamOpenId
         }, http, ct).ConfigureAwait(false);
     }
 
-    internal static async Task<ulong> AuthenticateAsync(Action<string> openBrowser, HttpClient http, CancellationToken ct)
+    internal static async Task<ulong> AuthenticateAsync(Action<string> openBrowser, HttpClient http, CancellationToken ct,
+        Func<string, Task<string>>? beginServerLogin = null,
+        Func<Dictionary<string, string>, Task<ulong?>>? verifyOnServer = null)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromMinutes(5));
@@ -49,7 +51,8 @@ public static class SteamOpenId
                 ["openid.identity"] = Namespace + "/identifier_select",
                 ["openid.claimed_id"] = Namespace + "/identifier_select",
             };
-            openBrowser(Endpoint + "?" + Encode(request));
+            openBrowser(beginServerLogin is null ? Endpoint + "?" + Encode(request) :
+                await beginServerLogin(returnTo).ConfigureAwait(false));
             while (true)
             {
                 using var client = await listener.AcceptTcpClientAsync(timeout.Token).ConfigureAwait(false);
@@ -72,7 +75,9 @@ public static class SteamOpenId
                     await RespondAsync(client, false, timeout.Token);
                     throw new SteamDownloadException("Steam authorization was cancelled. Select Authorize Steam to try again.");
                 }
-                var steamId = await VerifyAsync(fields, returnTo, began, http, timeout.Token).ConfigureAwait(false);
+                var steamId = verifyOnServer is null
+                    ? await VerifyAsync(fields, returnTo, began, http, timeout.Token).ConfigureAwait(false)
+                    : await verifyOnServer(fields).ConfigureAwait(false);
                 await RespondAsync(client, steamId.HasValue, timeout.Token).ConfigureAwait(false);
                 if (steamId.HasValue) return steamId.Value;
                 // Unsolicited or invalid requests must not complete the pending authorization.

@@ -4,10 +4,13 @@ $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath($PSScriptRoot)
 $sources = @((Get-ChildItem -LiteralPath $root -File -Filter '*.cs')) +
     @((Get-ChildItem -LiteralPath (Join-Path $root 'Core') -File -Filter '*.cs'))
-$forbidden = 'QRCoder|SteamKit2|BeginAuthSession|LoginWithCredentials|RefreshToken|PasswordBox|ServerCertificateCustomValidationCallback|DangerousAcceptAnyServerCertificateValidator|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|gh[pousr]_[A-Za-z0-9]{30,}'
+$forbidden = 'QRCoder|SteamKit2|BeginAuthSession|LoginWithCredentials|RefreshToken|PasswordBox|DangerousAcceptAnyServerCertificateValidator|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|gh[pousr]_[A-Za-z0-9]{30,}|PakAesKey|ApplyPakReaderPatch|Build-Map2LegacyPatch|SkyIslandLobbyBuilder|frida-client-gateway-bootstrap'
 $files = $sources + @((Get-ChildItem -LiteralPath $root -File -Filter '*.xaml')) +
     @((Get-Item -LiteralPath (Join-Path $root 'KpcLauncher.csproj')))
 foreach ($file in $files) {
+    if ($file.Name -ne 'TesterClient.cs' -and [IO.File]::ReadAllText($file.FullName) -match 'ServerCertificateCustomValidationCallback') {
+        throw "Custom TLS validation is allowed only in the tested tester certificate-pin implementation."
+    }
     if ([IO.File]::ReadAllText($file.FullName) -match $forbidden) {
         throw "Forbidden credential/authentication code or potential embedded secret in $($file.Name)."
     }

@@ -1,8 +1,9 @@
 # KPC Launcher
 
-A Windows utility for preserving two pinned KurtzPel depot versions in separate
-folders. **Steam itself downloads the game files**, using the account signed in to
-your installed Steam client. The launcher does not combine files or launch the game.
+A Windows launcher for preserving two pinned KurtzPel depot versions and accessing
+community testing. **Steam itself downloads the game files**, using the account
+signed in to your installed Steam client. Testers can then merge and play using
+private, signed instructions supplied by the community server.
 
 ## Download
 
@@ -16,7 +17,9 @@ To review the code and build the launcher yourself, follow the
 
 Windows 10 or later, an installed Steam client, an internet connection, and an
 account entitled to download KurtzPel are required. Allow around 60 GB for the two
-archives, plus temporary space for cross-drive copies or retained old files.
+archives and additional space for the merged game, temporary work and retained
+previous installations. Tester access also requires connectivity to the server's
+IPv6 endpoint.
 
 ## Use
 
@@ -29,6 +32,17 @@ archives, plus temporary space for cross-drive copies or retained old files.
    they were downloaded. Modified or older archives without a hash receipt are
    requested from Steam again. Previous folders are retained with a .previous-…
    suffix for manual review/removal when no download is active.
+6. For community testing, enter your tester code in **Settings → Redeem code**.
+   The server binds it to your verified Steam account. Normal Steam downloads and
+   verification do not require a code; the tester merge and Play do.
+7. Press **Merge**. The launcher receives the current signed private instructions,
+   builds `KurtzPel-Tester` in your storage folder and verifies the result.
+8. Press **Play**. The server checks access and the required update again before
+   issuing a single-use game ticket. Revoked accounts cannot obtain new tickets.
+
+**Check access** refreshes tester status. Merge and Play recheck tester access and
+updates. A changed merge version requires another merge; hook-only updates are
+received on Play. Private updates do not require another GitHub launcher release.
 
 Choose storage on Steam's drive for fast moves instead of cross-drive copies.
 Storage must be separate from Steam and launcher directories. Links and junctions
@@ -45,9 +59,11 @@ byte progress instead. The window and Cancel remain responsive during these step
 ## Steam authorization
 
 Browser authorization uses [Steam OpenID 2.0](https://partner.steamgames.com/doc/features/auth).
-KPC Launcher validates Steam's signed response directly with Valve over HTTPS, then
-remembers only the public Steam ID and verification date, protected with Windows
-DPAPI for the current user. Authorization is renewed after 30 days.
+The community server validates Steam's signed response directly with Valve over
+HTTPS. The launcher remembers the public Steam ID, verification date and an opaque
+community-server session, protected with Windows DPAPI for the current user.
+Authorization is renewed after 30 days. The community session is not a Steam login
+or download credential.
 **Settings → Authorize Steam** switches the linked account; **Disconnect account**
 removes that remembered identity.
 
@@ -73,8 +89,21 @@ restart Steam, sign in online, and retry. The launcher fails closed if a Steam
 update changes its identity/log format.
 
 Settings, remembered identity and logs are in %LOCALAPPDATA%/KPCLauncher:
-preservation-settings.json, steam-identity.dat and preservation.log. Old versions'
-Steam token files are never read or reused by this version.
+preservation-settings.json, steam-identity.dat, tester-session.dat and
+preservation.log. Generic runtime tools are cached in tester-tools. Private recipe
+packages, scripts and hooks are received into memory, used by temporary worker
+processes and released when those workers exit. Game output, verification receipts
+and runtime state remain on disk. This creates redistribution friction; it cannot
+prevent a tester or software running as that user from capturing memory, traffic
+after decryption, or game output. Windows may also page memory or create dumps.
+Old versions' Steam token files are never read or reused by this version.
+
+After Archive A is downloaded and verified, an authorized tester receives a signed
+request to prepare local game data. The private worker acquires the game key from
+that player's own pinned executable and validates it against a local encrypted
+PAK index. It does not start the game, save a key file, or upload the key. Neither
+the launcher nor the server's private update includes the game key. Normal users
+skip this preparation. Merging acquires the key again locally in a temporary worker.
 
 ## Verify the installer
 

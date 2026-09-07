@@ -1,5 +1,10 @@
 # Launcher source review — 2026-09-05
 
+Historical review of version 0.1.0. Version 0.2.0 adds server-side Steam
+verification, tester codes and an explicit signed private-code host. The statements
+below about direct browser verification and absence of dynamic loading apply only
+to the older version. See SECURITY.md for the current trust boundaries.
+
 Scope: the download-only launcher, its tests, packaging script and release workflow.
 The game, Steam client, other local launcher variants and dependency internals are
 outside this source review. Version remains 0.1.0; updates target KPC-Project.

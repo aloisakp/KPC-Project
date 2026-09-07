@@ -6,7 +6,8 @@ KPC Launcher uses these components under their respective licenses:
 - [.NET runtime](https://github.com/dotnet/runtime) and
   [Windows Desktop](https://github.com/dotnet/wpf), MIT: application runtime and UI.
 - System.Security.Cryptography.ProtectedData, MIT: Windows DPAPI protection of the
-  remembered public Steam ID and verification date. It stores no Steam login token.
+  remembered public Steam ID, verification date and community-server session.
+  It stores no Steam login token.
 
 Steam is installed separately. No game files, Steam credentials, or Steam client
 binaries are included in the launcher or installer.

@@ -242,6 +242,7 @@ try
         File.WriteAllText(Path.Combine(args[1], "success.html"), resultPage);
         File.WriteAllText(Path.Combine(args[1], "cancelled.html"), SteamOpenId.BuildResultPage(false, "nonce"));
     }
+    await TesterChecks.Run(Check,root);
     Console.WriteLine($"All {passed} security checks passed.");
 }
 finally

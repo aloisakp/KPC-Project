@@ -12,7 +12,7 @@ namespace KpcLauncher;
 
 public sealed record Fact(string Caption, string Value);
 
-public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposable
+public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, IDisposable
 {
     private const int MaxLogLines = 3000;
 
@@ -39,6 +39,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposab
     {
         Config = LauncherConfig.Load();
         _storageRoot = Config.StorageRoot;
+        InitializeTesterCommands();
         TrySaveConfig();
 
         DownloadCommand = new RelayCommand(() => _ = DownloadAsync(), () => !IsBusy && _steam is not null);
@@ -46,6 +47,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposab
         ForgetAccountCommand = new RelayCommand(() => _ = RunGuarded("Disconnecting account", _ =>
         {
             SteamAuthorization.Forget();
+            _testers.Forget();
+            ClearTesterAccess();
             _authorization = null;
             return Task.CompletedTask;
         }), () => !IsBusy && HasAuthorization);
@@ -64,7 +67,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposab
 
     public async Task InitializeAsync()
     {
-        if (!HasAuthorization) await AuthorizeAsync();
+        if (!HasAuthorization || _testers.Session is null) await AuthorizeAsync();
+        else await CheckTesterAccessAsync();
         await CheckForUpdatesAsync();
 
         if (_steam is null)
@@ -320,13 +324,16 @@ public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposab
 
     private Task AuthorizeAsync() => RunGuarded("Authorizing Steam account", async ct =>
     {
-        var steamId = await SteamOpenId.AuthenticateAsync(this, ct).ConfigureAwait(false);
+        ClearTesterAccess();
+        var steamId = await _testers.SignInAsync(this, ct).ConfigureAwait(false);
         var authorization = new SteamAuthorization(steamId, DateTimeOffset.UtcNow);
         authorization.Save();
         _authorization = authorization;
         Log_("Steam account authorized. Downloads will use the same account in your Steam client.", LogLevel.Good);
         if (_steam?.ActiveSteamId is { } active && active != steamId)
             Log_("Your Steam client is using another account. Switch it to the authorized account before Install.", LogLevel.Warn);
+        await RefreshTesterAccessAsync(ct).ConfigureAwait(false);
+        await PrepareLocalTesterDataAsync(ct, refreshAccess:false).ConfigureAwait(false);
     });
 
     private async Task DownloadAsync()
@@ -342,13 +349,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposab
         var recheck = DownloadsComplete;
 
         await RunGuarded(recheck ? "Verifying preserved downloads" : "Preparing",
-            cancellationToken =>
+            async cancellationToken =>
             {
                 TrySaveConfig();
                 // Existing-file hashing can run before the pipeline's first await.
                 // Start it on a worker so the window and Cancel remain responsive.
-                return Task.Run(() => new PreservationPipeline(Config, _steam, _authorization!, this)
-                    .RunAsync(recheck, cancellationToken), cancellationToken);
+                await Task.Run(() => new PreservationPipeline(Config, _steam, _authorization!, this, OnArchiveReadyAsync)
+                    .RunAsync(recheck, cancellationToken), cancellationToken).ConfigureAwait(false);
             }).ConfigureAwait(false);
     }
 
@@ -407,6 +414,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposab
         OnPropertyChanged(nameof(HasAuthorization));
         OnPropertyChanged(nameof(AuthorizedAccount));
         OnPropertyChanged(nameof(DownloadButtonText));
+        RefreshTesterProperties();
         RefreshFacts();
         if (!IsBusy && resetStep)
             StepName = !HasAuthorization ? "Authorize Steam to continue" : DownloadsComplete ? "Downloads preserved" : "Ready";
@@ -436,6 +444,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposab
         Facts.Add(new Fact("STEAM", SteamStatus));
         Facts.Add(new Fact("AUTHORIZED ACCOUNT", AuthorizedAccount));
         Facts.Add(new Fact("UPDATES", UpdateStatus));
+        Facts.Add(new Fact("TESTER ACCESS", TesterAccessStatus));
         Facts.Add(new Fact("LOCATION", Config.StorageRoot));
     }
 
@@ -567,5 +576,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IReporter, IDisposab
     public void Dispose()
     {
         _work?.Cancel();
+        _testers.Dispose();
     }
 }
