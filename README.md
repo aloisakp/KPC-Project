@@ -49,19 +49,21 @@ received on Play. Private updates do not require another GitHub launcher release
 The current private game update supports **Normal Match (1 vs 1)** for authorized
 testers. Both players queue for the same mode and accept the Ready screen. The
 server selects one player's local host at random; the other player connects through
-an encrypted Cloudflare TURN relay. The match currently uses the Road to Grand
-Chase arena and rules. Two-player combat and returning from the match have been
-tested; gameplay smoothness is still being improved.
+an encrypted Cloudflare TURN relay. Available missions, maps and rules are
+configured by the server. Two-player combat and returning from the match have
+been tested; additional configurations and gameplay smoothness remain under testing.
 
-Version 0.3.0 is the public beta baseline for that tested setup. The existing 0.2.0
-signed runtime host is also compatible with this private update. Restart the game
-through Play to receive current runtime instructions; a launcher version alone
-does not select an old or new game runtime.
+Version 0.4.0 is the current public beta launcher. Its functional code and security
+controls are unchanged from 0.3.0; game updates come from the signed private
+runtime. Existing 0.3.0 installations remain compatible. Restart the game through
+Play to receive current runtime instructions; a launcher version alone does not
+select an old or new game runtime.
 
-**2v2, 4v4 and other PvP modes are not enabled by this release.** They need server
-and private runtime work, including support for multiple remote players. Those
-components can be updated through the existing signed delivery mechanism without
-a public launcher release for each mode. Launcher UI, trust configuration or worker
+**A launcher release does not enable or validate every team mode.** The server's
+mission catalog supplies supported modes, maps, team sizes and goals; additional
+combinations still require gameplay testing. Server and private runtime components
+can be updated through the existing signed delivery mechanism without a public
+launcher release for each mode. Launcher UI, trust configuration or worker
 interface changes can still require a new executable. Tester access remains required.
 
 ## Storage and downloads
