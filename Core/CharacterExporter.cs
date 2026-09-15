@@ -1,13 +1,41 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.Win32.SafeHandles;
 
 namespace KpcLauncher.Core;
 
 internal static class CharacterExporter
 {
     private const string GameProcess = "TheChase-Win64-Shipping";
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool QueryFullProcessImageNameW(SafeProcessHandle process, uint flags,
+        StringBuilder path, ref uint size);
+
+    internal static bool MatchesLaunchedGame(Process process, string expectedExe, DateTime launchedAt)
+    {
+        try
+        {
+            if (process.HasExited) return false;
+            // MainModule reads the remote loader list, which is not initialized during
+            // early Steam startup (Win32 error 299). Query the OS image identity instead.
+            // Keep this Process's handle for subsequent waiting and capture completion.
+            var path = new StringBuilder(32768);
+            var size = (uint)path.Capacity;
+            if (!QueryFullProcessImageNameW(process.SafeHandle, 0, path, ref size))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            return string.Equals(path.ToString(), expectedExe, StringComparison.OrdinalIgnoreCase) &&
+                process.StartTime.ToUniversalTime() >= launchedAt.AddSeconds(-1);
+        }
+        catch (InvalidOperationException) when (process.HasExited) { return false; }
+        catch (Win32Exception) when (process.HasExited) { return false; }
+    }
 
     internal static string FindRetailExecutable(string steamExe)
     {
@@ -70,20 +98,19 @@ internal static class CharacterExporter
             while (game is null)
             {
                 timeout.Token.ThrowIfCancellationRequested(); RequireSteamAccount(steamId);
-                foreach (var process in Process.GetProcessesByName(GameProcess))
+                var candidates = Process.GetProcessesByName(GameProcess);
+                try
                 {
-                    bool keep = false;
-                    try
+                    foreach (var process in candidates)
                     {
-                        if (string.Equals(process.MainModule?.FileName, retailExe, StringComparison.OrdinalIgnoreCase) &&
-                            process.StartTime.ToUniversalTime() >= startedAt.AddSeconds(-1))
+                        if (MatchesLaunchedGame(process, retailExe, startedAt))
                         {
                             if (game is not null) throw new IOException("Multiple Steam game processes started.");
-                            game = process; keep = true;
+                            game = process;
                         }
                     }
-                    finally { if (!keep) process.Dispose(); }
                 }
+                finally { foreach (var process in candidates) if (process != game) process.Dispose(); }
                 if (game is null) await Task.Delay(200, timeout.Token);
             }
             RequireSteamAccount(steamId);
@@ -138,9 +165,11 @@ internal static class CharacterExporter
     internal static async Task CloseCapturedGameAsync(Process game, string expectedExe, DateTime launchedAt)
     {
         if (game.HasExited) return;
-        if (!string.Equals(game.MainModule?.FileName, expectedExe, StringComparison.OrdinalIgnoreCase) ||
-            game.StartTime.ToUniversalTime() < launchedAt.AddSeconds(-1))
+        if (!MatchesLaunchedGame(game, expectedExe, launchedAt))
+        {
+            if (game.HasExited) return;
             throw new IOException("The captured game process identity changed.");
+        }
         game.CloseMainWindow();
         using var grace = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         try { await game.WaitForExitAsync(grace.Token); }
