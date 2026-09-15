@@ -16,7 +16,7 @@
     <ApplicationIcon>Assets\launcher.ico</ApplicationIcon>
     <InvariantGlobalization>false</InvariantGlobalization>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-    <Version>0.5.0</Version>
+    <Version>0.5.1</Version>
     <Product>KPC Launcher</Product>
     <Description>Steam downloads and server-authorized community testing.</Description>
   </PropertyGroup>

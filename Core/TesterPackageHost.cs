@@ -36,11 +36,12 @@ public static class TesterPackageHost
         catch (Exception e) when (e is FormatException or CryptographicException) { throw new TesterException("The private release signature is invalid."); }
         var release=JsonSerializer.Deserialize<TesterRelease>(payload,TesterClient.Json) ?? throw new TesterException("Release metadata is empty.");
         bool Id(string value) => System.Text.RegularExpressions.Regex.IsMatch(value ?? "","^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$");
-        if(release.Schema!=1 || release.CharacterTransferVersion is not (0 or 1) || !Id(release.ReleaseId) || !Id(release.MergeVersion) || !Id(release.RuntimeVersion) ||
+        if(release.Schema!=1 || release.CharacterTransferVersion is not (0 or 1) || release.PublicExportVersion is not (0 or 1) || !Id(release.ReleaseId) || !Id(release.MergeVersion) || !Id(release.RuntimeVersion) ||
             !Version.TryParse(release.MinLauncherVersion,out var minimum) || minimum>typeof(TesterPackageHost).Assembly.GetName().Version ||
             release.Packages is null || release.Packages.Length!=2 || release.Packages.Count(p=>p.Kind=="instructions")!=1 || release.Packages.Count(p=>p.Kind=="tools")!=1)
             throw new TesterException("This private update requires a newer launcher or has unsupported metadata.");
-        if (release.KeyAcquisition is not { Operation: "getKey" } acquisition || !Id(acquisition.Version) ||
+        if (release.PublicExportVersion==1 ? release.KeyAcquisition is not null || release.CharacterTransferVersion!=0 :
+            release.KeyAcquisition is not { Operation: "getKey" } acquisition || !Id(acquisition.Version) ||
             !LauncherConfig.RequiredArchives.Any(a => a.ManifestId.ToString() == acquisition.ArchiveManifest))
             throw new TesterException("The private update has an unsupported local data preparation request.");
         foreach(var package in release.Packages)
@@ -70,16 +71,22 @@ public static class TesterPackageHost
         }
         return true;
     }
-    public static async Task<string?> RunAsync(TesterClient client,SignedRelease envelope,string operation,string storageRoot,IReporter reporter,CancellationToken ct)
+    internal static void RequireOperation(TesterRelease release,string operation)
+    {
+        if(release.PublicExportVersion==1 && operation!="export-character")
+            throw new TesterException("Public export packages cannot merge or launch the tester game.");
+    }
+    public static async Task<string?> RunAsync(TesterClient client,SignedRelease envelope,string operation,string storageRoot,IReporter reporter,CancellationToken ct,ulong? exportSteamId=null)
     {
         var release=VerifyRelease(envelope);
+        RequireOperation(release,operation);
         var tools=release.Packages.Single(p=>p.Kind=="tools");
         var files=tools.Files ?? throw new TesterException("The tools package has no signed file list.");
         if(files.Length is <1 or >20000 || files.Sum(f=>f.Bytes)>2L*1024*1024*1024 || files.Any(f=>f.Bytes<0 ||
             !System.Text.RegularExpressions.Regex.IsMatch(f.Sha256 ?? "","^[a-f0-9]{64}$")) || files.Select(f=>f.Path.ToLowerInvariant()).Distinct().Count()!=files.Length)
             throw new TesterException("The tools package has an invalid file list.");
         var toolsRoot=Path.Combine(LauncherConfig.AppDataDir,"tester-tools",tools.Sha256);
-        reporter.Step("Checking private runtime tools");
+        reporter.Step(release.PublicExportVersion==1?"Checking character export tools":"Checking private runtime tools");
         if(!await Task.Run(()=>ToolsValid(toolsRoot,files),ct))
         {
             var bytes=await client.DownloadAsync(release,tools,ct);
@@ -104,12 +111,13 @@ public static class TesterPackageHost
             }
             finally {CryptographicOperations.ZeroMemory(bytes);}
         }
-        reporter.Step("Receiving private instructions");
+        reporter.Step(release.PublicExportVersion==1?"Receiving character export listener":"Receiving private instructions");
         var instructions=await client.DownloadAsync(release,release.Packages.Single(p=>p.Kind=="instructions"),ct);
         try
         {
             SafePaths.NoLinks(storageRoot);
-            var request=JsonSerializer.Serialize(new {operation,storageRoot,session=client.Session,release,toolsRoot},TesterClient.Json);
+            var request=JsonSerializer.Serialize(new {operation,storageRoot,session=release.PublicExportVersion==1?null:client.Session,
+                exportSteamId=exportSteamId?.ToString(),release,toolsRoot},TesterClient.Json);
             var transport=JsonSerializer.SerializeToUtf8Bytes(new {envelope,request,toolsRoot},TesterClient.Json);
             var pipeName="kpc-private-"+Guid.NewGuid().ToString("N");
             using var lifetime=CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -134,7 +142,7 @@ public static class TesterPackageHost
             try
             {
                 await Task.WhenAll(Pump(process.StandardOutput),Pump(process.StandardError),process.WaitForExitAsync(ct));
-                if(process.ExitCode!=0) throw new TesterException("The private operation failed. The previous installation was preserved where possible; see the status above.");
+                if(process.ExitCode!=0) throw new TesterException(release.PublicExportVersion==1?"Character export failed. See the status above; previous exports are intact.":"The private operation failed. The previous installation was preserved where possible; see the status above.");
                 if(operation=="export-character" && capturedName is null)throw new TesterException("The export did not report a completed capture.");
                 return capturedName;
             }
@@ -192,6 +200,8 @@ public static class TesterPackageHost
             using var document=JsonDocument.Parse(metadata);var root=document.RootElement;
             var envelope=root.GetProperty("envelope").Deserialize<SignedRelease>(TesterClient.Json)!;
             var release=VerifyRelease(envelope);var item=release.Packages.Single(p=>p.Kind=="instructions");
+            using var operationRequest=JsonDocument.Parse(root.GetProperty("request").GetString()!);
+            RequireOperation(release,operationRequest.RootElement.GetProperty("operation").GetString()!);
             if(instructions.LongLength!=item.Bytes || !Convert.ToHexString(SHA256.HashData(instructions)).Equals(item.Sha256,StringComparison.OrdinalIgnoreCase))
                 throw new TesterException("Private worker instruction signature verification failed.");
             using var archive=new ZipArchive(new MemoryStream(instructions),ZipArchiveMode.Read);
@@ -202,6 +212,13 @@ public static class TesterPackageHost
                     throw new TesterException("Private instructions exceed the memory budget.");
                 using var source=entry.Open();using var bytes=new MemoryStream();source.CopyTo(bytes);
                 if(!assets.TryAdd(entry.FullName,bytes.ToArray()))throw new TesterException("Private instructions contain duplicate assets.");
+            }
+            if(release.PublicExportVersion==1)
+            {
+                if(args.Length!=1 || args[0]!="--tester-worker" || assets.Keys.Any(n=>!n.StartsWith("assets/",StringComparison.Ordinal) || !(n.EndsWith(".js")||n.EndsWith(".cjs"))))
+                    throw new TesterException("Invalid public export worker request.");
+                try {await CharacterExporter.RunAsync(operationRequest.RootElement,assets,default);return 0;}
+                finally {foreach(var bytes in assets.Values)CryptographicOperations.ZeroMemory(bytes);}
             }
             var context=new PrivateLoadContext(assets);
             try

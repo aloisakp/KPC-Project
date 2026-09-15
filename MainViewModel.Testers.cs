@@ -45,7 +45,7 @@ public sealed partial class MainViewModel
         CheckTesterAccessCommand=new RelayCommand(()=>_=CheckTesterAccessAsync(),()=>!IsBusy&&_testers.Session is not null);
         MergeCommand=new RelayCommand(()=>_=RunTesterOperationAsync("merge"),()=>!IsBusy&&HasTesterAccess&&DownloadsComplete);
         PlayCommand=new RelayCommand(()=>_=RunTesterOperationAsync("play"),()=>!IsBusy&&HasTesterAccess&&TesterBuildReady);
-        ExportCharacterCommand=new RelayCommand(()=>_=RunTesterOperationAsync("export-character"),()=>!IsBusy&&HasTesterAccess&&_testerRelease?.CharacterTransferVersion==1);
+        ExportCharacterCommand=new RelayCommand(()=>_=ExportCharacterAsync(),()=>!IsBusy&&_steam is not null&&HasAuthorization);
         OpenExportsFolderCommand=new RelayCommand(()=>OpenFolder(Path.Combine(Config.StorageRoot,"Character Exports"),create:true));
         DeleteAccountCommand=new RelayCommand(()=>_=DeleteAccountAsync(),()=>!IsBusy&&_testers.Session is not null);
     }
@@ -137,6 +137,18 @@ public sealed partial class MainViewModel
         if(_authorization is null || _testers.Session?.SteamId!=_authorization.SteamId.ToString())
             throw new TesterException("Authorize the same Steam account before continuing.");
     }
+    private Task ExportCharacterAsync()=>RunGuarded("Preparing character export",async ct=>
+    {
+        if(_steam is null || _authorization is null)throw new TesterException("Steam authorization is required.");
+        _steam.RequireAccount(_authorization);
+        var envelope=await _testers.ExportReleaseAsync(ct).ConfigureAwait(false);
+        if(TesterPackageHost.VerifyRelease(envelope).PublicExportVersion!=1)
+            throw new TesterException("The character export update is not available yet.");
+        var capturedName=await TesterPackageHost.RunAsync(_testers,envelope,"export-character",Config.StorageRoot,this,ct,_authorization.SteamId).ConfigureAwait(false);
+        await System.Windows.Application.Current.Dispatcher.InvokeAsync(()=>
+            System.Windows.MessageBox.Show(System.Windows.Application.Current.MainWindow,
+                "Captured "+capturedName,"Character export",System.Windows.MessageBoxButton.OK,System.Windows.MessageBoxImage.Information));
+    });
     private Task RunTesterOperationAsync(string operation)=>RunGuarded(operation switch {"merge"=>"Preparing tester game","export-character"=>"Preparing character export",_=>"Authorizing game launch"},async ct=>
     {
         if(_steam is null || _authorization is null)throw new TesterException("Steam authorization is required.");

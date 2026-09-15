@@ -59,7 +59,8 @@ updates continue to come from the signed private runtime when you press Play.
 
 ## Character transfer and account deletion
 
-**Export character** opens the normal Steam game. Select the character to keep
+**Export character** is available to everyone in version 0.5.1: no tester code,
+archive downloads or merge are needed. Authorize Steam first. It opens the normal Steam game. Select the character to keep
 and enter the square. When capture finishes, the game closes and the launcher
 confirms the character's name. **Open exports folder** shows the character-named
 file. Delete an unwanted export there, then capture another character.

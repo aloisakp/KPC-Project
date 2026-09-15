@@ -44,6 +44,26 @@ internal static class TesterChecks
         var envelope=new SignedRelease(Convert.ToBase64String(bytes),Convert.ToBase64String(key.SignData(bytes,HashAlgorithmName.SHA256,RSASignaturePadding.Pkcs1)));
         check(TesterPackageHost.VerifyRelease(envelope,key.ExportSubjectPublicKeyInfoPem()).ReleaseId=="release-1","valid signed tester release");
         void Reject(Action action,string name){try{action();}catch(TesterException){check(true,name);return;}throw new Exception("FAIL: "+name);}
+        var publicExport=value with {PublicExportVersion=1,KeyAcquisition=null,MinLauncherVersion="0.5.1"};
+        SignedRelease Sign(TesterRelease metadata) {var data=JsonSerializer.SerializeToUtf8Bytes(metadata,TesterClient.Json);return new(Convert.ToBase64String(data),Convert.ToBase64String(key.SignData(data,HashAlgorithmName.SHA256,RSASignaturePadding.Pkcs1)));}
+        check(TesterPackageHost.VerifyRelease(Sign(publicExport),key.ExportSubjectPublicKeyInfoPem()).PublicExportVersion==1,"signed public exporter needs no tester recipe");
+        TesterPackageHost.RequireOperation(publicExport,"export-character");
+        foreach(var operation in new[]{"play","merge","getKey","--tester-node"})
+            Reject(()=>TesterPackageHost.RequireOperation(publicExport,operation),"public export cannot authorize "+operation);
+        foreach(var invalid in new[]{publicExport with {PublicExportVersion=2},publicExport with {CharacterTransferVersion=1},publicExport with {KeyAcquisition=value.KeyAcquisition}})
+            Reject(()=>TesterPackageHost.VerifyRelease(Sign(invalid),key.ExportSubjectPublicKeyInfoPem()),"mixed or unsupported public export capability rejected");
+        var exportTemp=Path.Combine(root,"capture.tmp");File.WriteAllText(exportTemp,"first");
+        var exportName=ExportFileName.Complete(exportTemp,"Aloisa#EU");
+        check(Path.GetFileName(exportName)=="Aloisa#EU.kpc-character.json","public export uses the character name");
+        File.WriteAllText(exportTemp,"second");var secondName=ExportFileName.Complete(exportTemp,"Aloisa#EU");
+        check(File.ReadAllText(exportName)=="first"&&Path.GetFileName(secondName)=="Aloisa#EU (2).kpc-character.json","public export preserves earlier captures");
+        var view=(KpcLauncher.MainViewModel)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(KpcLauncher.MainViewModel));
+        void Field(string name,object? fieldValue)=>typeof(KpcLauncher.MainViewModel).GetField(name,System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.SetValue(view,fieldValue);
+        Field("_steam",new SteamInstall(root,"unused"));Field("_authorization",new SteamAuthorization(76561198000000001,DateTimeOffset.UtcNow));
+        typeof(KpcLauncher.MainViewModel).GetMethod("InitializeTesterCommands",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.Invoke(view,null);
+        check(!view.HasTesterAccess&&view.ExportCharacterCommand.CanExecute(null),"export button is enabled for an authorized non-tester");
+        check(!view.PlayCommand.CanExecute(null)&&!view.MergeCommand.CanExecute(null),"public export does not enable tester Play or merge");
+        Field("_authorization",null);check(!view.ExportCharacterCommand.CanExecute(null),"export still requires Steam authorization");
         foreach(var capability in new[]{0,1,2,-1})
         {
             var metadata=JsonSerializer.SerializeToUtf8Bytes(value with {CharacterTransferVersion=capability},TesterClient.Json);

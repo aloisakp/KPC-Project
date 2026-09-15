@@ -18,7 +18,7 @@ public sealed record TesterPackage(string Kind, string File, string Sha256, long
 public sealed record TesterKeyAcquisition(string Operation, string ArchiveManifest, string Version);
 public sealed record TesterRelease(int Schema, string ReleaseId, string MergeVersion, string RuntimeVersion,
     string MinLauncherVersion, TesterPackage[] Packages, TesterKeyAcquisition? KeyAcquisition = null,
-    int CharacterTransferVersion = 0);
+    int CharacterTransferVersion = 0, int PublicExportVersion = 0);
 public sealed record CharacterCreationStatus(string SchemaVersion, string State, string? DraftUid);
 public sealed record AccountDeletionStatus(string SchemaVersion, string State);
 public sealed record TesterStatus(bool Tester, string SteamId, SignedRelease? Release);
@@ -110,6 +110,8 @@ public sealed class TesterClient : IDisposable
         return id;
     }
     public Task<TesterStatus> StatusAsync(CancellationToken ct) => SendAsync<TesterStatus>(HttpMethod.Get,"/status",null,ct);
+    public Task<SignedRelease> ExportReleaseAsync(CancellationToken ct) =>
+        SendAsync<SignedRelease>(HttpMethod.Get,"/character-export/release",null,ct,authenticate:false);
     public Task<JsonElement> RedeemAsync(string code, CancellationToken ct) => SendAsync<JsonElement>(HttpMethod.Post,"/redeem",new {code},ct);
     public Task<JsonElement> LaunchAsync(TesterRelease release, CancellationToken ct) => SendAsync<JsonElement>(HttpMethod.Post,"/launch",
         new {release.ReleaseId,release.MergeVersion,release.RuntimeVersion},ct);
@@ -175,7 +177,8 @@ public sealed class TesterClient : IDisposable
     }
     public async Task<byte[]> DownloadAsync(TesterRelease release,TesterPackage package,CancellationToken ct)
     {
-        using var request = Request(HttpMethod.Get,$"/packages/{release.ReleaseId}/{package.Sha256}",null,true);
+        var prefix=release.PublicExportVersion==1?"/character-export":"";
+        using var request = Request(HttpMethod.Get,$"{prefix}/packages/{release.ReleaseId}/{package.Sha256}",null,release.PublicExportVersion!=1);
         using var response = await http.SendAsync(request,HttpCompletionOption.ResponseHeadersRead,ct).ConfigureAwait(false);
         await CheckAsync(response);
         var bytes = await ReadLimitedAsync(response,package.Bytes,ct);

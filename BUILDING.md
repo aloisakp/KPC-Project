@@ -27,7 +27,7 @@ A real transfer additionally requires a Steam entitlement and disk space.
 ## Packaging
 
 ```powershell
-./publish.ps1 -Version 0.5.0
+./publish.ps1 -Version 0.5.1
 ```
 
 The self-contained installer, update package and feed appear in artifacts/releases.
@@ -36,7 +36,7 @@ cleans only its publish, releases and build subdirectories; it keeps other artif
 For a shareable local test executable without creating installer/update packages:
 
 ```powershell
-./publish.ps1 -Version 0.5.0 -ArtifactDirectory artifacts/pvp-local -ExecutableOnly
+./publish.ps1 -Version 0.5.1 -ArtifactDirectory artifacts/pvp-local -ExecutableOnly
 ```
 
 The result is `artifacts/pvp-local/publish/KpcLauncher.exe`. This mode leaves
