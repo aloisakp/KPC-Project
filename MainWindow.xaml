@@ -148,6 +148,16 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    <StackPanel Margin="0,12,0,0">
+                        <WrapPanel>
+                            <Button Content="Export character" Command="{Binding ExportCharacterCommand}"/>
+                            <Button Content="Open exports folder" Command="{Binding OpenExportsFolderCommand}" Style="{StaticResource Ghost}" Margin="8,0,0,0"/>
+                        </WrapPanel>
+                        <TextBlock Text="Open KurtzPel through Steam, then enter the lobby with the character you want to export."
+                                   Style="{StaticResource Sub}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                        <TextBlock Text="Exports are named after your character. Delete an unwanted file here, then export again. Play offers your most recent export."
+                                   Style="{StaticResource Sub}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                    </StackPanel>
                 </StackPanel>
             </Grid>
 
@@ -226,6 +236,11 @@
                         <Button Content="Open Steam folder" Command="{Binding OpenSteamFolderCommand}"
                                 Style="{StaticResource Ghost}" Margin="8,0,0,0"/>
                     </WrapPanel>
+
+                    <TextBlock Text="Delete account" Style="{StaticResource H2}"/>
+                    <TextBlock Text="Permanently delete all your characters, items, currency, levels and progress on this community server. Close the game first. Local exports are kept, so you can import your character again when starting over."
+                               Style="{StaticResource Sub}" Margin="0,4,0,10" TextWrapping="Wrap"/>
+                    <Button Content="Delete account" Command="{Binding DeleteAccountCommand}" HorizontalAlignment="Left" Margin="0,0,0,26"/>
 
                     <Border Height="1" Background="{StaticResource Line}" Margin="0,0,0,26"/>
 

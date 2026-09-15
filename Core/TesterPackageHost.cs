@@ -36,7 +36,7 @@ public static class TesterPackageHost
         catch (Exception e) when (e is FormatException or CryptographicException) { throw new TesterException("The private release signature is invalid."); }
         var release=JsonSerializer.Deserialize<TesterRelease>(payload,TesterClient.Json) ?? throw new TesterException("Release metadata is empty.");
         bool Id(string value) => System.Text.RegularExpressions.Regex.IsMatch(value ?? "","^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$");
-        if(release.Schema!=1 || !Id(release.ReleaseId) || !Id(release.MergeVersion) || !Id(release.RuntimeVersion) ||
+        if(release.Schema!=1 || release.CharacterTransferVersion is not (0 or 1) || !Id(release.ReleaseId) || !Id(release.MergeVersion) || !Id(release.RuntimeVersion) ||
             !Version.TryParse(release.MinLauncherVersion,out var minimum) || minimum>typeof(TesterPackageHost).Assembly.GetName().Version ||
             release.Packages is null || release.Packages.Length!=2 || release.Packages.Count(p=>p.Kind=="instructions")!=1 || release.Packages.Count(p=>p.Kind=="tools")!=1)
             throw new TesterException("This private update requires a newer launcher or has unsupported metadata.");
@@ -70,7 +70,7 @@ public static class TesterPackageHost
         }
         return true;
     }
-    public static async Task RunAsync(TesterClient client,SignedRelease envelope,string operation,string storageRoot,IReporter reporter,CancellationToken ct)
+    public static async Task<string?> RunAsync(TesterClient client,SignedRelease envelope,string operation,string storageRoot,IReporter reporter,CancellationToken ct)
     {
         var release=VerifyRelease(envelope);
         var tools=release.Packages.Single(p=>p.Kind=="tools");
@@ -119,20 +119,36 @@ public static class TesterPackageHost
             start.ArgumentList.Add("--tester-worker");start.Environment[PipeVariable]=pipeName;
             using var process=Process.Start(start) ?? throw new TesterException("The private worker could not start.");
             using var cancel=ct.Register(()=>{try{if(!process.HasExited)process.Kill(entireProcessTree:true);}catch{}});
+            string? capturedName=null;
             async Task Pump(StreamReader reader)
             {
                 while(await reader.ReadLineAsync() is { } line)
                     if(line.StartsWith("KPC_STATUS ",StringComparison.Ordinal)) reporter.Step(line[11..]);
                     else if(line.StartsWith("KPC_ERROR ",StringComparison.Ordinal)) reporter.Log(line[10..],LogLevel.Error);
+                    else if(line.StartsWith("KPC_CAPTURED ",StringComparison.Ordinal))
+                    {
+                        if(operation!="export-character" || capturedName is not null)throw new TesterException("Unexpected capture completion.");
+                        capturedName=ParseCapturedName(line[13..]);
+                    }
             }
             try
             {
                 await Task.WhenAll(Pump(process.StandardOutput),Pump(process.StandardError),process.WaitForExitAsync(ct));
                 if(process.ExitCode!=0) throw new TesterException("The private operation failed. The previous installation was preserved where possible; see the status above.");
+                if(operation=="export-character" && capturedName is null)throw new TesterException("The export did not report a completed capture.");
+                return capturedName;
             }
             finally {lifetime.Cancel();await server;CryptographicOperations.ZeroMemory(transport);}
         }
         finally {CryptographicOperations.ZeroMemory(instructions);}
+    }
+    internal static string ParseCapturedName(string json)
+    {
+        if(json.Length>2048)throw new TesterException("Invalid captured character name.");
+        var name=JsonSerializer.Deserialize<string>(json);
+        if(string.IsNullOrWhiteSpace(name) || name.Length>128 || name.Any(char.IsControl))
+            throw new TesterException("Invalid captured character name.");
+        return name;
     }
     private static async Task ServeAsync(string name,byte[] metadata,byte[] instructions,CancellationToken ct)
     {
@@ -190,9 +206,10 @@ public static class TesterPackageHost
             var context=new PrivateLoadContext(assets);
             try
             {
-                using var module=new MemoryStream(assets["assemblies/KpcPrivateRuntime.dll"]);
+                var entryAssembly=release.CharacterTransferVersion==1?"KpcCharacterTransferRuntime":"KpcPrivateRuntime";
+                using var module=new MemoryStream(assets["assemblies/"+entryAssembly+".dll"]);
                 var assembly=context.LoadFromStream(module);
-                var entry=assembly.GetType("KpcPrivateRuntime.Entry",true)!.GetMethod("RunAsync",BindingFlags.Public|BindingFlags.Static)!;
+                var entry=assembly.GetType(entryAssembly+".Entry",true)!.GetMethod("RunAsync",BindingFlags.Public|BindingFlags.Static)!;
                 Func<string,byte[]> read=key=>assets.TryGetValue(key,out var bytes)?bytes:throw new FileNotFoundException("Private asset is missing.");
                 Func<string[]> names=()=>assets.Keys.ToArray();
                 var task=(Task<int>)entry.Invoke(null,[root.GetProperty("request").GetString()!,args,read,names])!;

@@ -17,13 +17,16 @@ public sealed record TesterToolFile(string Path, string Sha256, long Bytes);
 public sealed record TesterPackage(string Kind, string File, string Sha256, long Bytes, TesterToolFile[]? Files);
 public sealed record TesterKeyAcquisition(string Operation, string ArchiveManifest, string Version);
 public sealed record TesterRelease(int Schema, string ReleaseId, string MergeVersion, string RuntimeVersion,
-    string MinLauncherVersion, TesterPackage[] Packages, TesterKeyAcquisition? KeyAcquisition = null);
+    string MinLauncherVersion, TesterPackage[] Packages, TesterKeyAcquisition? KeyAcquisition = null,
+    int CharacterTransferVersion = 0);
+public sealed record CharacterCreationStatus(string SchemaVersion, string State, string? DraftUid);
+public sealed record AccountDeletionStatus(string SchemaVersion, string State);
 public sealed record TesterStatus(bool Tester, string SteamId, SignedRelease? Release);
 public sealed class TesterException(string message) : Exception(message);
 
 public sealed class TesterClient : IDisposable
 {
-    public const string Server = "https://[2a02:aa12:3307:af00:7669:f571:ee3a:9ea]:11006";
+    public const string Server = "https://178.104.156.210:11006";
     internal const string CertificateSha256 = "3630195B7FD5C1E7A60080B367D82DA922288B38E2975C4C81E774A03460E389";
     internal static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     private static string SessionFile => Path.Combine(LauncherConfig.AppDataDir, "tester-session.dat");
@@ -49,7 +52,10 @@ public sealed class TesterClient : IDisposable
             try
             {
                 var saved = JsonSerializer.Deserialize<TesterSession>(plain, Json);
-                return saved is not null && ValidSession(saved) ? saved : null;
+                if (saved is not null && ValidSession(saved)) return saved;
+                // Do not retain or forward sessions bound to an obsolete endpoint.
+                File.Delete(SessionFile);
+                return null;
             }
             finally { CryptographicOperations.ZeroMemory(plain); }
         }
@@ -107,9 +113,37 @@ public sealed class TesterClient : IDisposable
     public Task<JsonElement> RedeemAsync(string code, CancellationToken ct) => SendAsync<JsonElement>(HttpMethod.Post,"/redeem",new {code},ct);
     public Task<JsonElement> LaunchAsync(TesterRelease release, CancellationToken ct) => SendAsync<JsonElement>(HttpMethod.Post,"/launch",
         new {release.ReleaseId,release.MergeVersion,release.RuntimeVersion},ct);
-    private HttpRequestMessage Request(HttpMethod method,string path,object? body,bool authenticate)
+    public Task<CharacterCreationStatus> CharacterCreationAsync(CancellationToken ct) =>
+        SendAsync<CharacterCreationStatus>(HttpMethod.Get,"/auth/player/character-creation",null,ct,playerControl:true);
+    public Task<CharacterCreationStatus> ImportCharacterAsync(JsonElement exported,CancellationToken ct) =>
+        SendAsync<CharacterCreationStatus>(HttpMethod.Post,"/auth/player/character-creation/import",exported,ct,playerControl:true);
+    public async Task DeleteAccountAsync(CancellationToken ct)
     {
-        var request = new HttpRequestMessage(method,Server + "/tester/v1" + path);
+        using var request=Request(HttpMethod.Post,"/auth/player/account/delete",new {confirmation="DELETE"},true,playerControl:true);
+        using var response=await http.SendAsync(request,HttpCompletionOption.ResponseHeadersRead,ct).ConfigureAwait(false);
+        var bytes=await ReadLimitedAsync(response,4096,ct).ConfigureAwait(false);
+        try
+        {
+            if(response.StatusCode==HttpStatusCode.Conflict)
+            {
+                using var problem=JsonDocument.Parse(bytes);
+                if(problem.RootElement.TryGetProperty("code",out var code)&&code.GetString()=="account_in_use")
+                    throw new TesterException("Close KurtzPel before deleting your account, then try again.");
+                throw new TesterException("Account deletion could not complete. Please try again.");
+            }
+            await CheckAsync(response).ConfigureAwait(false);
+            ValidateDeletion(JsonSerializer.Deserialize<AccountDeletionStatus>(bytes,Json));
+        }
+        finally {CryptographicOperations.ZeroMemory(bytes);}
+    }
+    internal static void ValidateDeletion(AccountDeletionStatus? result)
+    {
+        if(result?.SchemaVersion!="kp-account-deletion/v1"||result.State!="empty")
+            throw new TesterException("The server did not confirm account deletion.");
+    }
+    private HttpRequestMessage Request(HttpMethod method,string path,object? body,bool authenticate,bool playerControl=false)
+    {
+        var request = new HttpRequestMessage(method,Server + (playerControl ? "" : "/tester/v1") + path);
         if (authenticate)
         {
             if (Session is null) throw new TesterException("Authorize Steam in Settings first.");
@@ -130,9 +164,9 @@ public sealed class TesterClient : IDisposable
             _ => "The tester service is unavailable. Please try again later.",
         });
     }
-    private async Task<T> SendAsync<T>(HttpMethod method,string path,object? body,CancellationToken ct,bool authenticate=true)
+    private async Task<T> SendAsync<T>(HttpMethod method,string path,object? body,CancellationToken ct,bool authenticate=true,bool playerControl=false)
     {
-        using var request = Request(method,path,body,authenticate);
+        using var request = Request(method,path,body,authenticate,playerControl);
         using var response = await http.SendAsync(request,HttpCompletionOption.ResponseHeadersRead,ct).ConfigureAwait(false);
         await CheckAsync(response);
         var bytes = await ReadLimitedAsync(response,2*1024*1024,ct);

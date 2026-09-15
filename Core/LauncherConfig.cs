@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace KpcLauncher.Core;
 
@@ -29,6 +30,7 @@ public sealed class LauncherConfig
 
     public static LauncherConfig Load()
     {
+        RetireLegacyEndpoints(Path.Combine(AppDataDir, "config.json"));
         LauncherConfig config;
         try
         {
@@ -46,6 +48,28 @@ public sealed class LauncherConfig
             config.StorageRoot = DefaultStorageRoot();
 
         return config;
+    }
+
+    internal static void RetireLegacyEndpoints(string path)
+    {
+        if (!File.Exists(path)) return;
+        SafePaths.NoLinks(path);
+        if (new FileInfo(path).Length > 1024 * 1024)
+            throw new IOException("Legacy launcher settings are too large to migrate safely.");
+        if (JsonNode.Parse(File.ReadAllText(path)) is not JsonObject settings) return;
+        var removed = false;
+        foreach (var key in settings.Select(p => p.Key).ToArray())
+            if (key.Equals("ServerHost", StringComparison.OrdinalIgnoreCase) ||
+                key.Equals("AccountServerBaseUrl", StringComparison.OrdinalIgnoreCase))
+                removed |= settings.Remove(key);
+        if (!removed) return;
+        var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(temporary, settings.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            File.Move(temporary, path, true);
+        }
+        finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
 
     /// <summary>

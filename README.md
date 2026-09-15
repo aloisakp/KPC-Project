@@ -18,8 +18,7 @@ To review the code and build the launcher yourself, follow the
 Windows 10 or later, an installed Steam client, an internet connection, and an
 account entitled to download KurtzPel are required. Allow around 60 GB for the two
 archives and additional space for the merged game, temporary work and retained
-previous installations. Tester access also requires connectivity to the server's
-IPv6 endpoint.
+previous installations. Community connections use the public VPS relay.
 
 ## Use
 
@@ -53,11 +52,29 @@ an encrypted Cloudflare TURN relay. Available missions, maps and rules are
 configured by the server. Two-player combat and returning from the match have
 been tested; additional configurations and gameplay smoothness remain under testing.
 
-Version 0.4.0 is the current public beta launcher. Its functional code and security
-controls are unchanged from 0.3.0; game updates come from the signed private
-runtime. Existing 0.3.0 installations remain compatible. Restart the game through
-Play to receive current runtime instructions; a launcher version alone does not
-select an old or new game runtime.
+Version 0.5.0 adds character export/import, export-folder access and account
+deletion. Community sign-in, private downloads and gameplay use the VPS relay.
+The endpoint change requires authorizing Steam again after upgrading. Game
+updates continue to come from the signed private runtime when you press Play.
+
+## Character transfer and account deletion
+
+**Export character** opens the normal Steam game. Select the character to keep
+and enter the square. When capture finishes, the game closes and the launcher
+confirms the character's name. **Open exports folder** shows the character-named
+file. Delete an unwanted export there, then capture another character.
+
+When your community account has no character, Play offers to use your latest
+export. Accepting opens an unnamed character in rebirth for editing and naming;
+completion continues into the starting story. Declining starts normal creation.
+Appearance, colours, sliders and the supported equipped outfit are transferred;
+weapon skins, aura and floating accessories are excluded. Imported clothing has
+its default stats, an **[Imported]** name, no trading and a 1 GP resale value.
+
+**Settings → Delete account** permanently removes your community game account,
+characters, inventory, currencies, levels and progress after confirmation. Close
+the game first. Your Steam account, tester access and local export files remain,
+so you can reuse an export when starting again.
 
 **A launcher release does not enable or validate every team mode.** The server's
 mission catalog supplies supported modes, maps, team sizes and goals; additional

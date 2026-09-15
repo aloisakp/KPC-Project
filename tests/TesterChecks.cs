@@ -10,6 +10,25 @@ internal static class TesterChecks
 {
     public static async Task Run(Action<bool,string> check,string root)
     {
+        check(new Uri(TesterClient.Server).Host == "178.104.156.210" && new Uri(TesterClient.Server).Port == 11006,
+            "community HTTPS targets the VPS relay");
+        var legacySettings=Path.Combine(root,"legacy-settings.json");
+        File.WriteAllText(legacySettings,"{\"ServerHost\":\"old.example\",\"accountserverbaseurl\":\"https://old.example\",\"StorageRoot\":\"preserve\",\"Custom\":42}");
+        LauncherConfig.RetireLegacyEndpoints(legacySettings);
+        using(var migrated=JsonDocument.Parse(File.ReadAllText(legacySettings)))
+            check(migrated.RootElement.EnumerateObject().Count()==2 && migrated.RootElement.GetProperty("StorageRoot").GetString()=="preserve" && migrated.RootElement.GetProperty("Custom").GetInt32()==42,
+                "legacy address settings removed without losing other settings");
+        var migratedText=File.ReadAllText(legacySettings);
+        LauncherConfig.RetireLegacyEndpoints(legacySettings);
+        check(File.ReadAllText(legacySettings)==migratedText,"endpoint migration is repeatable");
+        check(TesterPackageHost.ParseCapturedName(JsonSerializer.Serialize("Aloisa#EU"))=="Aloisa#EU",
+            "capture completion preserves the selected character name");
+        foreach(var invalid in new[]{"null", "\"\"", JsonSerializer.Serialize("bad\nname"), JsonSerializer.Serialize(new string('x',129))})
+        {
+            var rejected=false;
+            try{TesterPackageHost.ParseCapturedName(invalid);}catch(TesterException){rejected=true;}
+            check(rejected,"invalid capture completion is rejected");
+        }
         var launcher=typeof(TesterPackageHost).Assembly;
         check(launcher.GetManifestResourceNames().Order().SequenceEqual(new[]{"KpcLauncher.g.resources","KpcLauncher.tester-signing-public.pem"}.Order()),
             "launcher embeds only UI resources and the tester public key");
@@ -25,6 +44,21 @@ internal static class TesterChecks
         var envelope=new SignedRelease(Convert.ToBase64String(bytes),Convert.ToBase64String(key.SignData(bytes,HashAlgorithmName.SHA256,RSASignaturePadding.Pkcs1)));
         check(TesterPackageHost.VerifyRelease(envelope,key.ExportSubjectPublicKeyInfoPem()).ReleaseId=="release-1","valid signed tester release");
         void Reject(Action action,string name){try{action();}catch(TesterException){check(true,name);return;}throw new Exception("FAIL: "+name);}
+        foreach(var capability in new[]{0,1,2,-1})
+        {
+            var metadata=JsonSerializer.SerializeToUtf8Bytes(value with {CharacterTransferVersion=capability},TesterClient.Json);
+            var signed=new SignedRelease(Convert.ToBase64String(metadata),Convert.ToBase64String(key.SignData(metadata,HashAlgorithmName.SHA256,RSASignaturePadding.Pkcs1)));
+            if(capability is 0 or 1)check(TesterPackageHost.VerifyRelease(signed,key.ExportSubjectPublicKeyInfoPem()).CharacterTransferVersion==capability,"supported signed character transfer capability "+capability);
+            else Reject(()=>TesterPackageHost.VerifyRelease(signed,key.ExportSubjectPublicKeyInfoPem()),"unsupported signed character transfer capability rejected");
+        }
+        foreach(var state in new[]{new CharacterCreationStatus("kp-character-creation/v1","empty",null),new CharacterCreationStatus("kp-character-creation/v1","ready",null),new CharacterCreationStatus("kp-character-creation/v1","import-pending","123")})
+            CharacterExportFile.ValidateStatus(state);
+        check(true,"valid creation states accepted");
+        TesterClient.ValidateDeletion(new("kp-account-deletion/v1","empty"));
+        foreach(var result in new AccountDeletionStatus?[]{null,new("v2","empty"),new("kp-account-deletion/v1","ready")})
+            Reject(()=>TesterClient.ValidateDeletion(result),"account deletion requires an explicit empty result");
+        foreach(var state in new[]{new CharacterCreationStatus("v2","empty",null),new CharacterCreationStatus("kp-character-creation/v1","import-pending",null),new CharacterCreationStatus("kp-character-creation/v1","ready","123")})
+            Reject(()=>CharacterExportFile.ValidateStatus(state),"inconsistent character creation state rejected");
         foreach(var acquisition in new TesterKeyAcquisition?[]{null,new("execute","4819182874103212568","v1"),
             new("getKey","../../outside","v1"),new("getKey","4819182874103212568","")})
         {
