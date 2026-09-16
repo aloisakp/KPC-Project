@@ -142,6 +142,12 @@ public static class TesterPackageHost
             try
             {
                 await Task.WhenAll(Pump(process.StandardOutput),Pump(process.StandardError),process.WaitForExitAsync(ct));
+                // KPC_CAPTURED follows the file rename, so a later worker failure cannot undo the export.
+                if(process.ExitCode!=0 && operation=="export-character" && capturedName is not null)
+                {
+                    reporter.Log($"The export worker exited with 0x{process.ExitCode:X8} after saving {capturedName}; the export is complete.",LogLevel.Warn);
+                    return capturedName;
+                }
                 if(process.ExitCode!=0) throw new TesterException(release.PublicExportVersion==1?"Character export failed. See the status above; previous exports are intact.":"The private operation failed. The previous installation was preserved where possible; see the status above.");
                 if(operation=="export-character" && capturedName is null)throw new TesterException("The export did not report a completed capture.");
                 return capturedName;

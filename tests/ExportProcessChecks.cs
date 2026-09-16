@@ -1,7 +1,9 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
 using KpcLauncher.Core;
 
 internal static class ExportProcessChecks
@@ -72,5 +74,48 @@ internal static class ExportProcessChecks
             CloseHandle(info.Thread);
             CloseHandle(info.Process);
         }
+
+        // A Steam client started by the export can outlive the worker. It must not hold the worker's
+        // output pipe open, or the launcher waits for Steam to exit before reporting the export.
+        var ping = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "PING.EXE");
+        string[] longLived = ["-n", "4", "127.0.0.1"];
+        check(!await PipeClosesWhileChildRuns(() =>
+        {
+            var start = new ProcessStartInfo(ping) { UseShellExecute = false, CreateNoWindow = true };
+            foreach (var argument in longLived) start.ArgumentList.Add(argument);
+            using var child = Process.Start(start)!;
+            return child.Id;
+        }), "handle fixture reproduces a child holding the worker's pipe");
+        check(await PipeClosesWhileChildRuns(() => CharacterExporter.StartWithoutShell(ping, longLived)),
+            "Steam launch does not pass the worker's pipes to Steam");
+        foreach (var unsafeArgument in new[] { "two words", "\"quoted\"", "" })
+        {
+            var refused = false;
+            try { CharacterExporter.StartWithoutShell(ping, unsafeArgument); }
+            catch (ArgumentException) { refused = true; }
+            check(refused, "Steam launch refuses argument " + JsonSerializer.Serialize(unsafeArgument));
+        }
+        var missing = false;
+        try { CharacterExporter.StartWithoutShell(ping + ".missing", "-n", "1", "127.0.0.1"); }
+        catch (Win32Exception) { missing = true; }
+        check(missing, "Steam launch reports a missing executable");
+    }
+
+    private static async Task<bool> PipeClosesWhileChildRuns(Func<int> start)
+    {
+        using var pipe = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable);
+        var id = start();
+        pipe.DisposeLocalCopyOfClientHandle();
+        // Anonymous pipes cannot cancel a pending read; stop the child so the read always finishes.
+        var read = Task.Run(() => pipe.Read(new byte[1], 0, 1));
+        var closed = await Task.WhenAny(read, Task.Delay(TimeSpan.FromSeconds(2))) == read;
+        try
+        {
+            using var child = Process.GetProcessById(id);
+            child.Kill(entireProcessTree: true);
+            await child.WaitForExitAsync();
+        }
+        catch (ArgumentException) { } // already exited
+        return closed && await read == 0;
     }
 }

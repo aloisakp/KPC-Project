@@ -18,6 +18,55 @@ internal static class CharacterExporter
     private static extern bool QueryFullProcessImageNameW(SafeProcessHandle process, uint flags,
         StringBuilder path, ref uint size);
 
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct StartupInfo
+    {
+        public int Size;
+        public string? Reserved, Desktop, Title;
+        public int X, Y, Width, Height, XChars, YChars, Fill, Flags;
+        public short Show, ReservedSize;
+        public IntPtr ReservedData, Stdin, Stdout, Stderr;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ProcessInformation
+    {
+        public IntPtr Process, Thread;
+        public int ProcessId, ThreadId;
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CreateProcessW(string application, StringBuilder commandLine,
+        IntPtr processAttributes, IntPtr threadAttributes, [MarshalAs(UnmanagedType.Bool)] bool inheritHandles,
+        uint flags, IntPtr environment, string? directory, ref StartupInfo startup, out ProcessInformation information);
+
+    [DllImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CloseHandle(IntPtr handle);
+
+    /// <summary>
+    /// Starts a process without the shell and without inheriting this worker's handles; returns its id.
+    /// A shell launch left shell threads in the worker that crashed its exit (0xC0000005 in
+    /// windows.storage.dll) on some Windows 10 builds. Process.Start would instead pass the worker's
+    /// output pipes to a Steam client started here, so the launcher would wait until Steam exits.
+    /// </summary>
+    internal static int StartWithoutShell(string executable, params string[] arguments)
+    {
+        if (arguments.Any(a => a.Length == 0 || a.Any(c => c == '"' || char.IsWhiteSpace(c))))
+            throw new ArgumentException("Arguments must be single unquoted words.", nameof(arguments));
+        var commandLine = new StringBuilder("\"" + executable + "\"");
+        foreach (var argument in arguments) commandLine.Append(' ').Append(argument);
+        var startup = new StartupInfo { Size = Marshal.SizeOf<StartupInfo>() };
+        const uint CreateNoWindow = 0x08000000;
+        if (!CreateProcessW(executable, commandLine, IntPtr.Zero, IntPtr.Zero, false, CreateNoWindow,
+                IntPtr.Zero, null, ref startup, out var information))
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        CloseHandle(information.Thread);
+        CloseHandle(information.Process);
+        return information.ProcessId;
+    }
+
     internal static bool MatchesLaunchedGame(Process process, string expectedExe, DateTime launchedAt)
     {
         try
@@ -89,7 +138,8 @@ internal static class CharacterExporter
         var output = Path.Combine(outputFolder, ".capture-" + Guid.NewGuid().ToString("N") + ".tmp");
         reporter.Step("Starting KurtzPel through your Steam library");
         var startedAt = DateTime.UtcNow;
-        Process.Start(new ProcessStartInfo("steam://rungameid/844870") { UseShellExecute = true })?.Dispose();
+        // The same command Windows runs for a steam:// link ("steam.exe" -- "%1").
+        StartWithoutShell(steam.Executable, "--", "steam://rungameid/844870");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromMinutes(3));
         Process? game = null;
@@ -150,9 +200,10 @@ internal static class CharacterExporter
             if (listener.ExitCode != 0 || !File.Exists(output) || capturedName is null) throw new IOException("Character export did not complete. Your previous exports are intact.");
             RequireSteamAccount(steamId);
             ExportFileName.Complete(output, capturedName);
+            // The export is committed once the file is in place; announce it before closing the game.
+            Console.WriteLine("KPC_CAPTURED " + JsonSerializer.Serialize(capturedName));
             reporter.Step("Closing the captured Steam game");
             await CloseCapturedGameAsync(game, retailExe, startedAt);
-            Console.WriteLine("KPC_CAPTURED " + JsonSerializer.Serialize(capturedName));
         }
         finally
         {
