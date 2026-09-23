@@ -10,6 +10,7 @@ var reporter = new QuietReporter();
 var root = Path.Combine(Path.GetTempPath(), "kpc-security-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 var began = DateTimeOffset.UtcNow;
+var previousRelayRoot = Environment.GetEnvironmentVariable(RelayDevelopment.RootVariable);
 const string Callback = "http://127.0.0.1:12345/callback/0123456789abcdef";
 Dictionary<string, string> Assertion(string callback = Callback) => new()
 {
@@ -35,6 +36,26 @@ using var verifier = new FakeValve();
 using var http = new HttpClient(verifier);
 try
 {
+    RelayDeviceChecks.Run(Check,root);
+    foreach (var invalid in new[] { "", "relative", Path.GetPathRoot(root)! , root })
+    {
+        var rejected = false;
+        try { RelayDevelopment.RequireRoot(invalid); } catch (InvalidOperationException) { rejected = true; }
+        Check(rejected, "relay rejects unowned or unsafe state root");
+    }
+    var marker = Path.Combine(root, RelayDevelopment.MarkerName);
+    File.WriteAllText(marker, System.Text.Json.JsonSerializer.Serialize(new {
+        schema="kp-relay-sandbox/v1", baseline=RelayDevelopment.Baseline, root=Path.GetFullPath(root) }));
+    Check(RelayDevelopment.RequireRoot(root) == Path.GetFullPath(root), "relay accepts its explicitly owned root");
+    Environment.SetEnvironmentVariable(RelayDevelopment.RootVariable,root);
+    Check(LauncherConfig.AppDataDir == Path.Combine(root,"launcher"), "relay settings never use the installed launcher directory");
+    Check(LauncherConfig.Load().StorageRoot == Path.Combine(root,"downloads"), "relay defaults never reuse production download storage");
+    Velopack.VelopackApp.Build().Run();
+    var updater = new LauncherUpdater();
+    Check(await updater.CheckAsync() is null && !updater.IsInstalledBuild, "uninstalled test process cannot apply installer updates");
+    var installRejected=false;
+    try { await updater.DownloadAndApplyAsync(null!, _=>{}, default); } catch (InvalidOperationException) { installRejected=true; }
+    Check(installRejected, "uninstalled process refuses update application");
     Check(await SteamOpenId.VerifyAsync(Assertion(), Callback, began, http, default) == Account, "valid signed identity");
     Check(verifier.Calls == 1 && verifier.LastBody.Contains("openid.mode=check_authentication"), "Valve verification required");
     foreach (var (field, value) in new[]
@@ -248,6 +269,7 @@ try
 }
 finally
 {
+    Environment.SetEnvironmentVariable(RelayDevelopment.RootVariable,previousRelayRoot);
     if (!Path.GetFullPath(root).StartsWith(Path.GetFullPath(Path.GetTempPath()), StringComparison.OrdinalIgnoreCase))
         throw new Exception("Invalid test cleanup path.");
     Directory.Delete(root, recursive: true);

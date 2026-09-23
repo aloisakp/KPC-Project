@@ -10,6 +10,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        Title = "KPC Launcher — " + new Core.LauncherUpdater().CurrentVersion;
         DataContext = _viewModel;
         _viewModel.LogAppended += (_, _) => LogScroller.ScrollToEnd();
     }

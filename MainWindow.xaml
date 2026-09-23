@@ -40,7 +40,7 @@
                                RenderOptions.BitmapScalingMode="HighQuality"/>
                         <TextBlock Text="KPC" VerticalAlignment="Center"
                                    FontFamily="Segoe UI Semibold" FontSize="13"/>
-                        <TextBlock Text="Launcher" Margin="5,0,0,0" VerticalAlignment="Center"
+                        <TextBlock Text="Relay Dev" Margin="5,0,0,0" VerticalAlignment="Center"
                                    Foreground="{StaticResource Faint}" FontSize="13"/>
                     </StackPanel>
 
@@ -193,7 +193,7 @@
                     <Button Content="Check tester access" Command="{Binding CheckTesterAccessCommand}" HorizontalAlignment="Left" Margin="0,0,0,26"/>
 
                     <TextBlock Text="Launcher updates" Style="{StaticResource H2}"/>
-                    <TextBlock Text="Updates are checked automatically when the launcher starts. Installing an update always requires your confirmation."
+                    <TextBlock Text="The installed launcher checks for updates automatically. Relay registration happens when you press Play."
                                Style="{StaticResource Sub}" Margin="0,4,0,10" TextWrapping="Wrap"/>
                     <Border Background="#141926" CornerRadius="5" Padding="14" Margin="0,0,0,10"
                             BorderBrush="{StaticResource Line}" BorderThickness="1">

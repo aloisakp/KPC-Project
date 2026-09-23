@@ -8,22 +8,17 @@ public sealed class LauncherUpdater
 {
     public const string RepositoryUrl = "https://github.com/aloisakp/KPC-Project";
 
-    private UpdateManager? _manager;
-
-    public bool IsInstalledBuild => _manager?.IsInstalled == true;
+    private UpdateManager? manager;
+    public bool IsInstalledBuild => manager?.IsInstalled == true;
 
     public string CurrentVersion =>
-        _manager?.CurrentVersion?.ToString()
-        ?? Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3)
-        ?? "development";
+        Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion.Split('+')[0] ?? "0.6.0-dev.2";
 
     public async Task<UpdateInfo?> CheckAsync()
     {
-        _manager = new UpdateManager(new GithubSource(RepositoryUrl, null, false));
-        if (!_manager.IsInstalled)
-            return null;
-
-        return await _manager.CheckForUpdatesAsync().ConfigureAwait(false);
+        manager=new UpdateManager(new GithubSource(RepositoryUrl,null,false));
+        return manager.IsInstalled ? await manager.CheckForUpdatesAsync().ConfigureAwait(false) : null;
     }
 
     public async Task DownloadAndApplyAsync(
@@ -31,10 +26,8 @@ public sealed class LauncherUpdater
         Action<int> progress,
         CancellationToken cancellationToken)
     {
-        if (_manager is null)
-            throw new InvalidOperationException("Check for updates before applying one.");
-
-        await _manager.DownloadUpdatesAsync(update, progress, cancellationToken).ConfigureAwait(false);
-        _manager.ApplyUpdatesAndRestart(update.TargetFullRelease);
+        if(manager?.IsInstalled!=true)throw new InvalidOperationException("Install the launcher before applying updates.");
+        await manager.DownloadUpdatesAsync(update,progress,cancellationToken).ConfigureAwait(false);
+        manager.ApplyUpdatesAndRestart(update.TargetFullRelease);
     }
 }

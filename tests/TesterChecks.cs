@@ -10,8 +10,24 @@ internal static class TesterChecks
 {
     public static async Task Run(Action<bool,string> check,string root)
     {
-        check(new Uri(TesterClient.Server).Host == "178.104.156.210" && new Uri(TesterClient.Server).Port == 11006,
+        check(new Uri(TesterClient.Server).Host == "178.104.156.210" && new Uri(TesterClient.Server).Port == 11109,
             "community HTTPS targets the VPS relay");
+        var old=new TesterSession("76561198000000001",new string('a',43),"https://178.104.156.210:11006");
+        check(TesterClient.ValidSession(TesterClient.MigrateSession(old)!),"existing pinned public session migrates to relay");
+        check(!TesterClient.ValidSession(TesterClient.MigrateSession(old with{Server="https://untrusted.invalid"})!),"foreign session never migrates");
+        var oldSplit=Environment.GetEnvironmentVariable("KP_RELAY_SPLIT_MODE");
+        try
+        {
+            Environment.SetEnvironmentVariable("KP_RELAY_SPLIT_MODE","1");
+            check(TesterClient.Server=="https://127.0.0.1:11107","split test uses only the fixed development endpoint");
+            check(LauncherConfig.AppDataDir==Path.Combine(RelayDevelopment.StateRoot,"split-launcher"),"split settings and sessions are isolated");
+            check(LauncherConfig.Load().StorageRoot==Path.Combine(RelayDevelopment.StateRoot,"split-storage"),"split prepared client defaults to owned storage");
+            Environment.SetEnvironmentVariable("KP_RELAY_SPLIT_MODE","https://elsewhere.invalid");
+            var rejected=false;
+            try{_ = TesterClient.Server;}catch(InvalidOperationException){rejected=true;}
+            check(rejected,"split selector cannot supply an arbitrary endpoint");
+        }
+        finally{Environment.SetEnvironmentVariable("KP_RELAY_SPLIT_MODE",oldSplit);}
         var legacySettings=Path.Combine(root,"legacy-settings.json");
         File.WriteAllText(legacySettings,"{\"ServerHost\":\"old.example\",\"accountserverbaseurl\":\"https://old.example\",\"StorageRoot\":\"preserve\",\"Custom\":42}");
         LauncherConfig.RetireLegacyEndpoints(legacySettings);

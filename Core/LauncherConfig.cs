@@ -19,9 +19,12 @@ public sealed class LauncherConfig
 
     public string StorageRoot { get; set; } = "";
 
-    public static string AppDataDir => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "KPCLauncher");
+    // An explicit owned override remains available to automated development tests;
+    // the installed launcher uses the same settings/session directory as 0.5.3.
+    internal static bool HasDevelopmentRoot => !string.IsNullOrEmpty(Environment.GetEnvironmentVariable(RelayDevelopment.RootVariable));
+    public static string AppDataDir => HasDevelopmentRoot
+        ? Path.Combine(RelayDevelopment.StateRoot,RelayDevelopment.SplitServer ? "split-launcher" : "launcher")
+        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"KPCLauncher");
 
     private static string ConfigPath => Path.Combine(AppDataDir, "preservation-settings.json");
 
@@ -79,16 +82,12 @@ public sealed class LauncherConfig
     /// </summary>
     private static string DefaultStorageRoot()
     {
-        const string FolderName = "KPC Preservation";
-
-        if (SteamInstall.Find()?.Root is { Length: > 0 } steamRoot &&
-            Path.GetPathRoot(steamRoot) is { Length: > 0 } drive)
-        {
-            return Path.Combine(drive, FolderName);
-        }
-
-        return Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), FolderName);
+        if(HasDevelopmentRoot)return Path.Combine(RelayDevelopment.StateRoot,
+            RelayDevelopment.SplitServer ? "split-storage" : "downloads");
+        const string folder="KPC Preservation";
+        if(SteamInstall.Find()?.Root is {Length:>0} steamRoot && Path.GetPathRoot(steamRoot) is {Length:>0} drive)
+            return Path.Combine(drive,folder);
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),folder);
     }
 
     public void Save()

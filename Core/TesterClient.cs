@@ -26,7 +26,8 @@ public sealed class TesterException(string message) : Exception(message);
 
 public sealed class TesterClient : IDisposable
 {
-    public const string Server = "https://178.104.156.210:11006";
+    public static string Server => LauncherConfig.HasDevelopmentRoot && RelayDevelopment.SplitServer
+        ? "https://127.0.0.1:11107" : "https://178.104.156.210:11109";
     internal const string CertificateSha256 = "3630195B7FD5C1E7A60080B367D82DA922288B38E2975C4C81E774A03460E389";
     internal static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     private static string SessionFile => Path.Combine(LauncherConfig.AppDataDir, "tester-session.dat");
@@ -52,6 +53,7 @@ public sealed class TesterClient : IDisposable
             try
             {
                 var saved = JsonSerializer.Deserialize<TesterSession>(plain, Json);
+                saved = MigrateSession(saved);
                 if (saved is not null && ValidSession(saved)) return saved;
                 // Do not retain or forward sessions bound to an obsolete endpoint.
                 File.Delete(SessionFile);
@@ -64,6 +66,14 @@ public sealed class TesterClient : IDisposable
     internal static bool ValidSession(TesterSession value) => value.Server == Server &&
         ulong.TryParse(value.SteamId, out var id) && SteamOpenId.IsIndividualId(id) &&
         System.Text.RegularExpressions.Regex.IsMatch(value.Token, "^[A-Za-z0-9_-]{43}$");
+    internal static TesterSession? MigrateSession(TesterSession? saved)
+    {
+        // Only this same pinned operator's old public route can migrate. Never
+        // forward an arbitrary endpoint's credentials to the new service.
+        if(saved?.Server=="https://178.104.156.210:11006" && Server=="https://178.104.156.210:11109")
+            return saved with {Server=Server};
+        return saved;
+    }
     public void Forget()
     {
         Session = null;

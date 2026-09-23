@@ -227,8 +227,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
 
             if (!_updater.IsInstalledBuild)
             {
-                UpdateStatus = "Updater available in installed releases";
-                Log_("This development build is not installed through the launcher installer; update application is disabled.", LogLevel.Dim);
+                UpdateStatus = "Use the installed launcher for automatic updates";
+                Log_("This executable is not installed. The Setup installer enables automatic launcher updates.", LogLevel.Dim);
                 return;
             }
 
