@@ -32,6 +32,13 @@ public sealed partial class SteamInstall
     public static SteamInstall? FindConfigured(LauncherConfig config) => Find(config.SteamRoot);
     internal bool MatchesStaging(string reported, uint appId, uint depotId) =>
         SafePaths.Same(reported, StagingDirectory(appId, depotId));
+    internal IEnumerable<string> StagingDirectories(uint appId, uint depotId) => [StagingDirectory(appId, depotId)];
+    internal string ResolveStaging(string reported, uint appId, uint depotId)
+    {
+        if (!MatchesStaging(reported, appId, depotId))
+            throw new SteamDownloadException($"Steam reported an unexpected download folder: {reported}. No files were moved.");
+        return StagingDirectory(appId, depotId);
+    }
 
     public string ConsoleLog => Path.Combine(Root, "logs", "console_log.txt");
     public string ContentLog => Path.Combine(Root, "logs", "content_log.txt");

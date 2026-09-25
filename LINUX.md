@@ -31,7 +31,13 @@ then a system Wine installation. If needed, install **Proton Experimental** thro
 **Steam → Library → Tools** and retry. No console setup or Python helper is needed.
 Game tooling uses its own environment under the launcher settings directory.
 
-This is the first native Linux release. Automated tests cover native detection,
+Version 0.7.1 fixes depot downloads reported under `ubuntu12_32` or `ubuntu12_64`,
+including Steam completion messages containing backslashes. If 0.7.0 stopped with
+"Steam reported an unexpected download folder", update and retry **Install**.
+Untracked previous downloads are kept with a `.previous-...` suffix and may need
+to be downloaded again. No manual Steam-folder change is needed for this fix.
+
+Automated tests cover native detection,
 account/log validation, installer behavior, both graphical windows, and Windows
 worker startup under Wine. Real Steam depot downloads, Flatpak/Proton combinations
 and community gameplay still need testing on players' machines.

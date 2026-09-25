@@ -50,7 +50,6 @@ public sealed partial class DepotDownload(SteamInstall steam, SteamAuthorization
         // mistaken for this one's result.
         var console = LogTail.FromEnd(steam.ConsoleLog);
         var content = LogTail.FromEnd(steam.ContentLog);
-        var staging = steam.StagingDirectory(appId, depotId);
 
         reporter.Step($"Asking Steam for {label}");
         steam.DownloadDepot(appId, depotId, manifestId, authorization);
@@ -71,10 +70,12 @@ public sealed partial class DepotDownload(SteamInstall steam, SteamAuthorization
                     ulong.TryParse(complete.Groups["manifest"].Value, out var finished) &&
                     finished == manifestId)
                 {
-                    if (!steam.MatchesStaging(complete.Groups["dir"].Value, appId, depotId))
-                        throw new SteamDownloadException("Steam reported an unexpected download folder; no files were moved.");
+                    var reported = complete.Groups["dir"].Value;
+                    reporter.Log($"Steam reported download folder: {reported}", LogLevel.Dim);
+                    var staging = steam.ResolveStaging(reported, appId, depotId);
                     SafePaths.NoLinks(staging);
                     steam.RequireAccount(authorization);
+                    reporter.Log($"Validated download folder: {staging}", LogLevel.Dim);
                     reporter.Progress(new StepProgress($"Downloading {label}", 1, 1, "complete"));
                     reporter.Log($"Steam finished downloading {label}.", LogLevel.Good);
                     return staging;

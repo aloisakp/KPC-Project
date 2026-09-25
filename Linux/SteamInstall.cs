@@ -18,7 +18,56 @@ public sealed partial class SteamInstall
     public string ConsoleLog => Path.Combine(Root, "logs", "console_log.txt");
     public string ContentLog => Path.Combine(Root, "logs", "content_log.txt");
     public string StagingDirectory(uint appId, uint depotId) => Path.Combine(Root, "steamapps", "content", $"app_{appId}", $"depot_{depotId}");
-    internal bool MatchesStaging(string reported, uint appId, uint depotId) => Path.IsPathFullyQualified(reported) && SafePaths.Same(reported, StagingDirectory(appId, depotId));
+    // Steam can stage relative to its native binary directory and print Windows separators.
+    // Backslashes can also be literal filename characters on Linux: check the filesystem,
+    // never infer which representation exists from the console message alone.
+    internal IEnumerable<string> StagingDirectories(uint appId, uint depotId)
+    {
+        var tail = $"steamapps/content/app_{appId}/depot_{depotId}";
+        foreach (var arch in new[] { "", "ubuntu12_32", "ubuntu12_64" })
+        {
+            var prefix = arch.Length == 0 ? Root : Path.Combine(Root, arch);
+            yield return prefix + "/" + tail;
+            yield return prefix + "/" + tail.Replace('/', '\\');
+            if (arch.Length != 0) yield return prefix + "\\" + tail.Replace('/', '\\');
+        }
+    }
+
+    private string? ReportedStaging(string reported, uint appId, uint depotId)
+    {
+        try
+        {
+            var normalized = reported.Replace('\\', '/').TrimEnd('/');
+            if (!Path.IsPathFullyQualified(normalized) ||
+                normalized.Split('/').Any(part => part is "." or "..")) return null;
+            foreach (var arch in new[] { "ubuntu12_32/", "ubuntu12_64/", "" })
+            {
+                var suffix = $"/{arch}steamapps/content/app_{appId}/depot_{depotId}";
+                if (!normalized.EndsWith(suffix, StringComparison.Ordinal)) continue;
+                // Allow Steam's aliases for its data root, but not links inside the depot tree.
+                if (Canonical(normalized[..^suffix.Length]) == Root) return Root + suffix;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { }
+        return null;
+    }
+
+    internal bool MatchesStaging(string reported, uint appId, uint depotId) =>
+        ReportedStaging(reported, appId, depotId) is not null;
+
+    internal string ResolveStaging(string reported, uint appId, uint depotId)
+    {
+        var expected = ReportedStaging(reported, appId, depotId);
+        if (expected is null)
+            throw new SteamDownloadException($"Steam reported an unexpected download folder: {reported}. No files were moved.");
+        var matches = StagingDirectories(appId, depotId)
+            .Where(path => path.Replace('\\', '/') == expected && Directory.Exists(path)).ToArray();
+        if (matches.Length != 1)
+            throw new SteamDownloadException($"Steam reported download folder: {reported}. " +
+                $"Found {matches.Length} matching folders; expected exactly one. No files were moved.");
+        SafePaths.NoLinks(matches[0]);
+        return matches[0];
+    }
     public static SteamInstall? FindConfigured(LauncherConfig config) => Find(config.SteamRoot);
     internal static string Canonical(string path)
     {
@@ -105,7 +154,8 @@ public sealed partial class SteamInstall
         var process = LiveProcess() ?? throw new SteamDownloadException("Start Steam and sign in before installing.");
         if (!File.Exists(ConsoleLog)) return;
         using var reader = File.OpenText(ConsoleLog);
-        if (HasPendingDepotDownload(reader, process.Started, appId, depotId, StagingDirectory(appId, depotId)))
+        if (HasPendingDepotDownload(reader, process.Started, appId, depotId,
+                reported => MatchesStaging(reported, appId, depotId)))
             throw new SteamDownloadException("Steam has an unfinished download. Let it finish or restart Steam before retrying. Existing files were preserved.");
     }
     private void Launch(params string[] arguments)

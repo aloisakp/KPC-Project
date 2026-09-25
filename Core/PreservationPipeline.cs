@@ -66,9 +66,12 @@ public sealed class PreservationPipeline(
             steam.RequireAccount(authorization);
             var directory = config.ArchiveDirectory(archive);
 
-            var staging = steam.StagingDirectory(LauncherConfig.AppId, LauncherConfig.DepotId);
+            var stagingFolders = steam.StagingDirectories(LauncherConfig.AppId, LauncherConfig.DepotId).ToArray();
             steam.RequireDepotIdle(LauncherConfig.AppId, LauncherConfig.DepotId);
-            PrepareStaging(staging, archive.ManifestId);
+            // Each supported location must be clean for this manifest before Steam starts.
+            // Otherwise files from Archive A could be merged into Archive B in an alternate folder.
+            foreach (var staging in stagingFolders) SafePaths.NoLinks(staging);
+            foreach (var staging in stagingFolders) PrepareStaging(staging, archive.ManifestId);
 
             reporter.Step($"Downloading {archive.Label}");
             reporter.Log($"{archive.Label} -> {directory}", LogLevel.Dim);
@@ -88,7 +91,7 @@ public sealed class PreservationPipeline(
 
             reporter.Step($"Verifying {archive.Label}");
             WriteStamp(directory, archive, cancellationToken);
-            ClearStagingMarker(staging);
+            foreach (var staging in stagingFolders) ClearStagingMarker(staging);
             reporter.Log($"{archive.Label} preserved in {directory}", LogLevel.Good);
             if (onArchiveReady is not null) await onArchiveReady(archive, cancellationToken).ConfigureAwait(false);
         }
@@ -237,7 +240,7 @@ public sealed class PreservationPipeline(
     private void PrepareStaging(string staging, ulong manifestId)
     {
         SafePaths.NoLinks(staging);
-        var marker = Path.Combine(Path.GetDirectoryName(staging)!, StagingMarker);
+        var marker = StagingMarkerPath(staging);
         SafePaths.NoLinks(marker);
         var staged = File.Exists(marker) ? File.ReadAllText(marker).Trim() : null;
 
@@ -258,11 +261,15 @@ public sealed class PreservationPipeline(
         File.WriteAllText(marker, manifestId.ToString());
     }
 
+    private static string StagingMarkerPath(string staging) =>
+        OperatingSystem.IsLinux() && staging.Contains('\\') ? staging + StagingMarker :
+        Path.Combine(Path.GetDirectoryName(staging)!, StagingMarker);
+
     private static void ClearStagingMarker(string staging)
     {
         try
         {
-            var marker = Path.Combine(Path.GetDirectoryName(staging)!, StagingMarker);
+            var marker = StagingMarkerPath(staging);
             SafePaths.NoLinks(marker);
             File.Delete(marker);
         }

@@ -36,6 +36,10 @@ public sealed partial class SteamInstall
 
     internal static bool HasPendingDepotDownload(TextReader reader, DateTime processStarted,
         uint appId, uint depotId, string staging)
+        => HasPendingDepotDownload(reader, processStarted, appId, depotId, reported => SafePaths.Same(reported, staging));
+
+    internal static bool HasPendingDepotDownload(TextReader reader, DateTime processStarted,
+        uint appId, uint depotId, Func<string, bool> matchesStaging)
     {
         var pending = 0;
         var awaitingStart = false;
@@ -59,7 +63,7 @@ public sealed partial class SteamInstall
                 awaitingStart = false;
             }
             else if (Regex.Match(message, "^Depot download complete : \"(?<dir>.*)\" \\(manifest [0-9]+\\)") is { Success: true } complete &&
-                SafePaths.Same(complete.Groups["dir"].Value, staging))
+                matchesStaging(complete.Groups["dir"].Value))
             {
                 pending = Math.Max(0, pending - 1);
                 awaitingStart = false;

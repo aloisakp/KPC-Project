@@ -2,7 +2,7 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType><TargetFramework>net8.0-windows</TargetFramework>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
-    <LangVersion>latest</LangVersion><Version>0.7.0</Version><DefineConstants>$(DefineConstants);GAME_WORKER</DefineConstants>
+    <LangVersion>latest</LangVersion><Version>0.7.1</Version><DefineConstants>$(DefineConstants);GAME_WORKER</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../Core/*.cs" Exclude="../Core/LauncherUpdater.cs;../Core/RelayCommand.cs;../Core/DesktopUi.cs" />

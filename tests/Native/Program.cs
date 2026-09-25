@@ -48,13 +48,86 @@ try
             Reject(() => steam.RequireDepotIdle(844870, 844871), "an unfinished depot request blocks staging changes");
             File.AppendAllText(steam.ConsoleLog, $"[{stamp}] Depot download complete : \"{steam.StagingDirectory(844870,844871)}\" (manifest 4819182874103212568)\n");
             steam.RequireDepotIdle(844870,844871); Check(true, "exact staging completion clears the pending request");
+            var reported = data + "/ubuntu12_32\\steamapps\\content\\app_844870\\depot_844871";
+            File.AppendAllText(steam.ConsoleLog, $"[{stamp}] ExecCommandLine: +download_depot 844870 844871 4819182874103212568\n" +
+                $"[{stamp}] Depot download complete : \"{reported}\" (manifest 4819182874103212568)\n");
+            steam.RequireDepotIdle(844870, 844871);
+            Check(true, "reported Linux backslash completion releases the pending request on retry");
+
+            // Run the actual two-archive pipeline against a tiny simulated Steam client.
+            // Only the command producer is replaced; account checks, log parsing, folder
+            // preparation, movement and archive receipts all run unchanged.
+            var actual = Path.Combine(data, "ubuntu12_32", "steamapps", "content", "app_844870", "depot_844871");
+            Directory.CreateDirectory(actual);
+            File.WriteAllText(Path.Combine(actual, "previous-download.bin"), "keep previous files");
+            var bin = Path.Combine(root, "test-bin"); Directory.CreateDirectory(bin);
+            var command = Path.Combine(bin, "steam");
+            string Quote(string value) => "'" + value.Replace("'", "'\"'\"'") + "'";
+            var script = "#!/bin/sh\nset -eu\n" +
+                "mkdir -p " + Quote(actual) + "\n" +
+                "printf '%s' \"$4\" > " + Quote(actual) + "/\"$4.bin\"\n" +
+                "printf " + Quote($"[{stamp}] Depot download complete : \"{reported}\" (manifest %s)\n") +
+                " \"$4\" >> " + Quote(steam.ConsoleLog) + "\n";
+            File.WriteAllText(command, script);
+            File.SetUnixFileMode(command, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            var previousPath = Environment.GetEnvironmentVariable("PATH");
+            try
+            {
+                Environment.SetEnvironmentVariable("PATH", bin + ":" + previousPath);
+                File.WriteAllText(log, $"[{stamp}] [Logged On, 4, 7] [U:1:123] logged in\n");
+                var config = new LauncherConfig { StorageRoot = Path.Combine(root, "Preserved archives é") };
+                var authorization = new SteamAuthorization(SteamOpenId.IndividualBase + 123, DateTimeOffset.UtcNow);
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+                await new PreservationPipeline(config, steam, authorization, new QuietReporter()).RunAsync(false, timeout.Token);
+                Check(Directory.GetDirectories(Path.GetDirectoryName(actual)!, "depot_844871.previous-*")
+                    .Any(folder => File.ReadAllText(Path.Combine(folder, "previous-download.bin")) == "keep previous files"),
+                    "untracked files from the previous Linux download are preserved before retry");
+                foreach (var archive in LauncherConfig.RequiredArchives)
+                {
+                    var folder = config.ArchiveDirectory(archive);
+                    Check(File.ReadAllText(Path.Combine(folder, archive.ManifestId + ".bin")) == archive.ManifestId.ToString() &&
+                        Directory.GetFiles(folder, "*.bin").Length == 1 &&
+                        PreservationPipeline.HasVerifiedReceipt(config, archive.ManifestId.ToString()),
+                        archive.Label + " filed from native binary directory without mixing manifests");
+                }
+                steam.RequireDepotIdle(844870, 844871);
+                Check(true, "completion still clears pending requests after staging has been moved");
+            }
+            finally { Environment.SetEnvironmentVariable("PATH", previousPath); }
         }
         finally { if (!process.HasExited) process.Kill(); process.WaitForExit(); }
     }
     Check(steam!.ActiveSteamId is null && !steam.IsClientRunning, "exited Steam invalidates identity");
     Check(!SafePaths.Same(Path.Combine(root, "A"), Path.Combine(root, "a")), "Linux paths are case sensitive");
     Check(!steam.MatchesStaging(steam.StagingDirectory(844870,844871).ToUpperInvariant(),844870,844871), "case mismatch cannot authorize a staging directory");
-    var content = Path.Combine(data, "steamapps", "content"); Directory.CreateSymbolicLink(content, root);
+    const uint app = 844870, depot = 844871;
+    var nativeReport = data + "/ubuntu12_32\\steamapps\\content\\app_844870\\depot_844871";
+    foreach (var candidate in steam.StagingDirectories(app, depot))
+    {
+        Directory.CreateDirectory(candidate);
+        Check(steam.ResolveStaging(candidate.Replace('\\', '/'), app, depot) == candidate,
+            "resolves existing staging layout " + Path.GetRelativePath(data, candidate));
+        Directory.Delete(candidate);
+    }
+    var nativeStaging = Path.Combine(data, "ubuntu12_32", "steamapps", "content", "app_844870", "depot_844871");
+    Directory.CreateDirectory(nativeStaging);
+    Check(steam.ResolveStaging(nativeReport, app, depot) == nativeStaging, "exact user-reported backslash format resolves to native directory");
+    Check(steam.ResolveStaging(nativeReport.Replace(data, alias), app, depot) == nativeStaging, "Steam data-root aliases resolve without changing depot boundaries");
+    foreach (var invalid in new[] { nativeReport.Replace("844871", "844872"), nativeReport.Replace("844870", "1"),
+        nativeReport.Replace(data, root), nativeReport.ToUpperInvariant(), "relative/steamapps/content/app_844870/depot_844871",
+        data + "/ubuntu12_32/../ubuntu12_32/steamapps/content/app_844870/depot_844871" })
+        Reject(() => steam.ResolveStaging(invalid, app, depot), "rejects unrelated, relative, case-mismatched or traversing path");
+    Directory.CreateDirectory(nativeReport);
+    Reject(() => steam.ResolveStaging(nativeReport, app, depot), "ambiguous literal-backslash and native folders are not guessed");
+    Directory.Delete(nativeReport);
+    Directory.Delete(nativeStaging);
+    Reject(() => steam.ResolveStaging(nativeReport, app, depot), "missing download directory produces a diagnostic instead of a wrong move");
+    Directory.CreateSymbolicLink(nativeStaging, root);
+    Reject(() => steam.ResolveStaging(nativeReport, app, depot), "native staging symlinks cannot authorize unrelated files");
+    Directory.Delete(nativeStaging);
+    var content = Path.Combine(data, "steamapps", "content");
+    Directory.Move(content, content + "-test-saved");
+    Directory.CreateSymbolicLink(content, root);
     Check(SteamInstall.FromFolder(data) is null, "redirected Steam staging rejected"); Directory.Delete(content);
 
     var destination = Path.Combine(root, "Custom launcher é"); var applications = Path.Combine(root, "applications");
@@ -99,3 +172,10 @@ try
     Console.WriteLine($"All {count} native Linux checks passed.");
 }
 finally { Directory.Delete(root, true); }
+
+sealed class QuietReporter : IReporter
+{
+    public void Log(string message, LogLevel level = LogLevel.Info) { }
+    public void Step(string label) { }
+    public void Progress(StepProgress progress) { }
+}

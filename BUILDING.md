@@ -29,7 +29,7 @@ A real transfer additionally requires a Steam entitlement and disk space.
 Windows:
 
 ```powershell
-./publish.ps1 -Version 0.7.0
+./publish.ps1 -Version 0.7.1
 ```
 
 This builds the Windows launcher, Velopack update package/feed, and a graphical
@@ -42,7 +42,7 @@ Linux (on Linux, with .NET 8 SDK, Python 3 for packaging, and desktop libraries)
 
 ```sh
 dotnet run --project tests/Native/NativeTests.csproj -c Release
-bash publish-linux.sh 0.7.0
+bash publish-linux.sh 0.7.1
 ```
 
 The native Avalonia UI links the shared preservation, authorization and signed

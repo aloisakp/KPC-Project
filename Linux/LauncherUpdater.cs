@@ -14,7 +14,7 @@ public sealed class LauncherUpdater
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(10) };
     internal static string? InstallRoot => Directory.GetParent(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.Parent?.FullName;
     public bool IsInstalledBuild => InstallRoot is { } root && File.Exists(Path.Combine(root, ".kpc-install.json"));
-    public string CurrentVersion => Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.7.0";
+    public string CurrentVersion => Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.7.1";
     public async Task<LauncherUpdate?> CheckAsync()
     {
         if (!IsInstalledBuild) return null;
