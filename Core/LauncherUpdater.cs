@@ -13,7 +13,7 @@ public sealed class LauncherUpdater
 
     public string CurrentVersion =>
         Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
-            .InformationalVersion.Split('+')[0] ?? "0.6.0-dev.2";
+            .InformationalVersion.Split('+')[0] ?? "0.6.1";
 
     public async Task<UpdateInfo?> CheckAsync()
     {

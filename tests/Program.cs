@@ -51,6 +51,7 @@ try
     Check(LauncherConfig.AppDataDir == Path.Combine(root,"launcher"), "relay settings never use the installed launcher directory");
     Check(LauncherConfig.Load().StorageRoot == Path.Combine(root,"downloads"), "relay defaults never reuse production download storage");
     Velopack.VelopackApp.Build().Run();
+    SteamFolderChecks.Run(Check, root);
     var updater = new LauncherUpdater();
     Check(await updater.CheckAsync() is null && !updater.IsInstalledBuild, "uninstalled test process cannot apply installer updates");
     var installRejected=false;

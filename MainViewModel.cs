@@ -23,7 +23,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
     /// The installed Steam client, which performs every account operation. The launcher has
     /// no Steam session of its own to hold.
     /// </summary>
-    private readonly SteamInstall? _steam = SteamInstall.Find();
+    private SteamInstall? _steam;
     private SteamAuthorization? _authorization = SteamAuthorization.Load();
 
     private CancellationTokenSource? _work;
@@ -38,6 +38,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
     public MainViewModel()
     {
         Config = LauncherConfig.Load();
+        _steam = SteamInstall.Find(Config.SteamRoot);
         _storageRoot = Config.StorageRoot;
         InitializeTesterCommands();
         TrySaveConfig();
@@ -57,6 +58,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
         OpenFolderCommand = new RelayCommand(OpenStorageFolder);
         OpenLogCommand = new RelayCommand(OpenLogFile);
         OpenSteamFolderCommand = new RelayCommand(OpenSteamFolder, () => _steam is not null);
+        BrowseSteamFolderCommand = new RelayCommand(BrowseSteamFolder, () => !IsBusy);
+        DetectSteamCommand = new RelayCommand(DetectSteam, () => !IsBusy);
         CheckUpdatesCommand = new RelayCommand(() => _ = CheckForUpdatesAsync(), () => !IsBusy);
         ToggleLogCommand = new RelayCommand(() => IsLogVisible = !IsLogVisible);
 
@@ -73,8 +76,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
 
         if (_steam is null)
         {
-            Log_("Steam is not installed on this computer. Install Steam, sign in to the account "
-                 + "that owns KurtzPel, then restart the launcher.", LogLevel.Error);
+            Log_("Steam could not be found. Use Select Steam folder or Settings > Steam to choose "
+                 + "the folder containing steam.exe, including when running under Wine.", LogLevel.Warn);
             return;
         }
 
@@ -145,6 +148,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
 
     private string _steamStatus = "";
     public string SteamStatus { get => _steamStatus; private set => Set(ref _steamStatus, value); }
+    public bool IsSteamMissing => _steam is null;
+    public string SteamFolder => _steam?.Root ?? (string.IsNullOrWhiteSpace(Config.SteamRoot)
+        ? "Not found - select the folder containing steam.exe" : Config.SteamRoot);
 
     private int _completedArchives;
     public int CompletedArchives
@@ -202,6 +208,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
     public ICommand OpenFolderCommand { get; }
     public ICommand OpenLogCommand { get; }
     public ICommand OpenSteamFolderCommand { get; }
+    public ICommand BrowseSteamFolderCommand { get; }
+    public ICommand DetectSteamCommand { get; }
     public ICommand CheckUpdatesCommand { get; }
     public ICommand ToggleLogCommand { get; }
 
@@ -341,7 +349,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
         if (!HasAuthorization) { await AuthorizeAsync(); return; }
         if (_steam is null)
         {
-            Log_("Steam is not installed on this computer, so there is nothing to download with.",
+            Log_("Steam could not be found. Select its installation folder in Settings > Steam.",
                 LogLevel.Error);
             return;
         }
@@ -373,6 +381,51 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
     }
 
     private void OpenStorageFolder() => OpenFolder(Config.StorageRoot, create: true);
+
+    private void BrowseSteamFolder()
+    {
+        try
+        {
+            var dialog = new Microsoft.Win32.OpenFolderDialog
+            {
+                Title = "Select the Steam installation folder containing steam.exe",
+                InitialDirectory = Directory.Exists(SteamFolder) ? SteamFolder : "",
+            };
+            if (dialog.ShowDialog() == true) SetSteamFolder(dialog.FolderName);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Could not select the Steam folder: {ex.Message}", "Steam folder",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void DetectSteam()
+    {
+        try { SetSteamFolder(null); }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Could not save the Steam folder: {ex.Message}", "Steam folder",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    internal void SetSteamFolder(string? root)
+    {
+        if (IsBusy) return;
+        var steam = SteamInstall.Find(root);
+        if (!string.IsNullOrWhiteSpace(root) && steam is null)
+            throw new IOException("Choose the Steam installation folder containing steam.exe, not a game or steamapps folder.");
+
+        var previous = Config.SteamRoot;
+        Config.SteamRoot = string.IsNullOrWhiteSpace(root) ? "" : steam!.Root;
+        try { Config.Save(); }
+        catch { Config.SteamRoot = previous; throw; }
+        _steam = steam;
+        RefreshState();
+        Log_(steam is null ? "Steam was not detected. Select its installation folder."
+            : $"Steam folder: {steam.Root}", steam is null ? LogLevel.Warn : LogLevel.Good);
+    }
 
     private void OpenSteamFolder()
     {
@@ -411,6 +464,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
     {
         CompletedArchives = PreservationPipeline.CompletedCount(Config);
         SteamStatus = DescribeSteam();
+        OnPropertyChanged(nameof(SteamFolder));
+        OnPropertyChanged(nameof(IsSteamMissing));
         OnPropertyChanged(nameof(HasAuthorization));
         OnPropertyChanged(nameof(AuthorizedAccount));
         OnPropertyChanged(nameof(DownloadButtonText));
@@ -423,7 +478,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
 
     private string DescribeSteam() => _steam switch
     {
-        null => "Not installed",
+        null => "Not found - select Steam folder",
         _ when _steam.ActiveSteamId is { } active => !HasAuthorization ? "Authorization required" :
             active == _authorization!.SteamId ? "Account matches" : "Different account",
         _ when SteamInstall.IsRunning => "Running, signed out",

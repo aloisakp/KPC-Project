@@ -38,8 +38,11 @@ public sealed class SteamInstall
     public string StagingDirectory(uint appId, uint depotId) =>
         Path.Combine(Root, "steamapps", "content", $"app_{appId}", $"depot_{depotId}");
 
-    public static SteamInstall? Find()
+    public static SteamInstall? Find(string? selectedRoot = null)
     {
+        // A saved choice is authoritative. If it moved, ask for a new folder rather
+        // than silently using another Steam installation and its account/logs.
+        if (!string.IsNullOrWhiteSpace(selectedRoot)) return FromFolder(selectedRoot);
         var root = ReadPath(Registry.CurrentUser, @"Software\Valve\Steam", "SteamPath")
                    ?? ReadPath(Registry.LocalMachine, @"SOFTWARE\WOW6432Node\Valve\Steam", "InstallPath")
                    ?? ReadPath(Registry.LocalMachine, @"SOFTWARE\Valve\Steam", "InstallPath");
@@ -49,6 +52,23 @@ public sealed class SteamInstall
                          ?? Path.Combine(root, "steam.exe");
 
         return File.Exists(executable) ? new SteamInstall(root, executable) : null;
+    }
+
+    public static SteamInstall? FromFolder(string? root)
+    {
+        if (string.IsNullOrWhiteSpace(root)) return null;
+        try
+        {
+            root = root.Replace('/', Path.DirectorySeparatorChar);
+            if (!Path.IsPathFullyQualified(root)) return null;
+            root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+            var executable = Path.Combine(root, "steam.exe");
+            return File.Exists(executable) ? new SteamInstall(root, executable) : null;
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException or UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     /// <summary>Steam records its own location with forward slashes ("g:/steam").</summary>

@@ -86,6 +86,23 @@ interface changes can still require a new executable. Tester access remains requ
 
 ## Storage and downloads
 
+### Steam folder selection and Wine
+
+Version **0.6.1** adds Wine support through manual Steam folder selection. If
+Steam is not found, click **Select Steam folder** on the home screen, or open
+**Settings → Steam → Select Steam folder**. Choose the Steam installation folder
+containing **steam.exe**, not `steamapps` or the KurtzPel game folder.
+
+The launcher remembers this location and uses it immediately, including after
+restart. Use **Use automatic detection** in Settings to clear the saved choice.
+If the selected installation moves or disappears, select its new folder.
+
+Under Wine, choose the Windows Steam installation accessible in the launcher's
+Wine environment. This fixes missing registry-based detection; it does not add
+integration with the native Linux Steam client. Linux/Wine compatibility is
+community-tested and depends on your setup; this release has not been validated
+end to end under Wine. Steam sign-in and matching-account checks still apply.
+
 Choose storage on Steam's drive for fast moves instead of cross-drive copies.
 Storage must be separate from Steam and launcher directories. Links and junctions
 are rejected. Downloads remain subject to Steam's availability and entitlement
@@ -174,3 +191,18 @@ See [BUILDING.md](BUILDING.md), [SECURITY.md](SECURITY.md), [source review](REVI
 
 This unofficial, non-commercial community project is not affiliated with or
 endorsed by Valve, KOG, or the relevant rights holders. No game files are distributed.
+
+## Contact and rights-holder requests
+
+Contact: **[Aloisa.froyard@gmail.com](mailto:Aloisa.froyard@gmail.com)**.
+
+KOG, its representatives, and any third-party rights holders whose resources are
+used in the game, by KOG, or in this project may send copyright concerns or
+takedown requests to this address. Please identify the affected content, the
+rights involved, and how we can contact you.
+
+We aim to respond in good faith and reach reasonable terms with the relevant
+rights holders. Where possible and acceptable to them, we hope to resolve
+concerns by removing or replacing only the affected content. This is a request
+for dialogue, not a condition on submitting a takedown request or a guarantee
+that the project can continue unchanged.

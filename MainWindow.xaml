@@ -148,6 +148,9 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    <Button Content="Select Steam folder" Command="{Binding BrowseSteamFolderCommand}"
+                            HorizontalAlignment="Left" Margin="0,8,0,0"
+                            Visibility="{Binding IsSteamMissing, Converter={StaticResource BoolToVis}}"/>
                     <StackPanel Margin="0,12,0,0">
                         <WrapPanel>
                             <Button Content="Export character" Command="{Binding ExportCharacterCommand}"/>
@@ -218,6 +221,14 @@
                             Margin="0,0,0,26"/>
 
                     <TextBlock Text="Steam" Style="{StaticResource H2}"/>
+                    <TextBlock Text="If Steam is not detected (including under Wine), select its installation folder containing steam.exe. The selection is saved and applies immediately."
+                               Style="{StaticResource Sub}" Margin="0,4,0,10" TextWrapping="Wrap"/>
+                    <TextBox IsReadOnly="True" Text="{Binding SteamFolder, Mode=OneWay}" Margin="0,0,0,10"/>
+                    <WrapPanel Margin="0,0,0,10">
+                        <Button Content="Select Steam folder" Command="{Binding BrowseSteamFolderCommand}"/>
+                        <Button Content="Use automatic detection" Command="{Binding DetectSteamCommand}"
+                                Style="{StaticResource Ghost}" Margin="8,0,0,0"/>
+                    </WrapPanel>
                     <TextBlock Text="Authorize your Steam account in your browser. Steam itself downloads the files; its signed-in account must match the account you authorize here. The launcher never asks for your Steam password or a QR code."
                                Style="{StaticResource Sub}" Margin="0,4,0,10" TextWrapping="Wrap"/>
                     <Border Background="#141926" CornerRadius="5" Padding="14" Margin="0,0,0,10"
