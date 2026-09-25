@@ -40,12 +40,13 @@ jobs:
           if ($process.ExitCode -ne 0 -or -not (Test-Path $env:KPC_SMOKE_SCREENSHOT)) { throw 'Installer UI smoke test failed' }
           Remove-Item Env:KPC_SMOKE_SCREENSHOT
           $env:KP_RELAY_SANDBOX_ROOT = Join-Path $env:RUNNER_TEMP 'kpc-install-smoke-state'
+          $env:KPC_LAUNCHER_SMOKE = '1'
           New-Item -ItemType Directory -Path $env:KP_RELAY_SANDBOX_ROOT | Out-Null
           @{schema='kp-relay-sandbox/v1';baseline='23bbacb12f906a6d57ee0abcb80e02df901ed8b4';root=$env:KP_RELAY_SANDBOX_ROOT} | ConvertTo-Json | Set-Content (Join-Path $env:KP_RELAY_SANDBOX_ROOT '.relay-sandbox-owner.json')
           $destination = Join-Path $env:RUNNER_TEMP 'KPC custom location é'
           $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $PWD 'artifacts/windows-installer-payload.exe'))
           $start.UseShellExecute = $false
-          foreach ($argument in @('--silent','--installto',$destination,'--','--smoke-test')) { $start.ArgumentList.Add($argument) }
+          foreach ($argument in @('--silent','--installto',$destination)) { $start.ArgumentList.Add($argument) }
           $installed = [Diagnostics.Process]::Start($start)
           if (-not $installed.WaitForExit(90000) -or $installed.ExitCode -ne 0) { throw 'Custom-location install failed' }
           if (-not (Test-Path (Join-Path $destination 'current/KpcLauncher.exe'))) { throw 'Installer ignored chosen destination' }

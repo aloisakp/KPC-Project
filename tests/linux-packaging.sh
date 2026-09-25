@@ -18,6 +18,7 @@ set +e
 timeout 120 xvfb-run -a wine "$(dirname "$app")/game-worker/KpcGameWorker.exe" --tester-worker > artifacts/ui/worker-smoke.log 2>&1
 result=$?
 set -e
+cat artifacts/ui/worker-smoke.log
 test "$result" -eq 1
 grep -F 'KPC_ERROR Invalid game worker connection.' artifacts/ui/worker-smoke.log
 printf 'Native installer, custom installation, launcher UI and Wine worker smoke checks passed.\n'

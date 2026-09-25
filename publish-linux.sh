@@ -7,7 +7,7 @@ build="$(mktemp -d "$PWD/artifacts-linux-XXXXXX")"
 dotnet publish Linux/KpcLauncher.Linux.csproj -c Release -r linux-x64 --self-contained true \
   -p:Version="$version" -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -o "$build/app"
 dotnet publish Worker/KpcGameWorker.csproj -c Release -r win-x64 --self-contained true \
-  -p:Version="$version" -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -o "$build/app/game-worker"
+  -p:Version="$version" -p:PublishSingleFile=false -p:DebugType=None -o "$build/app/game-worker"
 python3 - "$build" <<'PY'
 from pathlib import Path
 import sys, zipfile

@@ -15,7 +15,7 @@ public static class Program
             return;
         }
         VelopackApp.Build().Run();
-        SmokeTest = args.Contains("--smoke-test");
+        SmokeTest = args.Contains("--smoke-test") || Core.LauncherConfig.HasDevelopmentRoot && Environment.GetEnvironmentVariable("KPC_LAUNCHER_SMOKE") == "1";
 
         var application = new App();
         application.InitializeComponent();
