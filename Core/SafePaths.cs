@@ -5,12 +5,12 @@ namespace KpcLauncher.Core;
 internal static class SafePaths
 {
     public static string Normalize(string path) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
-    public static bool Same(string a, string b) => Normalize(a).Equals(Normalize(b), StringComparison.OrdinalIgnoreCase);
+    public static bool Same(string a, string b) => Normalize(a).Equals(Normalize(b), OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
     public static bool Within(string path, string root)
     {
         var parent = Normalize(root);
         if (!Path.EndsInDirectorySeparator(parent)) parent += Path.DirectorySeparatorChar;
-        return Same(path, root) || Normalize(path).StartsWith(parent, StringComparison.OrdinalIgnoreCase);
+        return Same(path, root) || Normalize(path).StartsWith(parent, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
     }
 
     public static void NoLinks(string path)

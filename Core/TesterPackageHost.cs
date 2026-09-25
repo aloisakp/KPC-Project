@@ -116,16 +116,31 @@ public static class TesterPackageHost
         try
         {
             SafePaths.NoLinks(storageRoot);
+#if LINUX
+            var runtime = new GameRuntime();
+            storageRoot = await runtime.MapAsync(storageRoot, ct);
+            toolsRoot = await runtime.MapAsync(toolsRoot, ct);
+#endif
             var request=JsonSerializer.Serialize(new {operation,storageRoot,session=release.PublicExportVersion==1?null:client.Session,
                 exportSteamId=exportSteamId?.ToString(),release,toolsRoot},TesterClient.Json);
             var transport=JsonSerializer.SerializeToUtf8Bytes(new {envelope,request,toolsRoot},TesterClient.Json);
             var pipeName="kpc-private-"+Guid.NewGuid().ToString("N");
             using var lifetime=CancellationTokenSource.CreateLinkedTokenSource(ct);
-            var server=ServeAsync(pipeName,transport,instructions,lifetime.Token);
+#if LINUX
+            using var channel = new WorkerChannel();
+            var start = runtime.Worker();
+            channel.Configure(start);
+#else
             var start=new ProcessStartInfo(Environment.ProcessPath!) {UseShellExecute=false,CreateNoWindow=true,
                 RedirectStandardOutput=true,RedirectStandardError=true};
             start.ArgumentList.Add("--tester-worker");start.Environment[PipeVariable]=pipeName;
+#endif
             using var process=Process.Start(start) ?? throw new TesterException("The private worker could not start.");
+#if LINUX
+            var server = channel.ServeAsync(transport, instructions, lifetime.Token);
+#else
+            var server = ServeAsync(pipeName,transport,instructions,lifetime.Token);
+#endif
             using var cancel=ct.Register(()=>{try{if(!process.HasExited)process.Kill(entireProcessTree:true);}catch{}});
             string? capturedName=null;
             async Task Pump(StreamReader reader)
@@ -194,11 +209,15 @@ public static class TesterPackageHost
     }
     private static async Task<int> RunWorkerAsync(string[] args)
     {
+        using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(90));
+#if GAME_WORKER
+        await using var pipe = await WorkerChannel.ConnectAsync(timeout.Token);
+#else
         var name=Environment.GetEnvironmentVariable(PipeVariable);
         if(name is null || !System.Text.RegularExpressions.Regex.IsMatch(name,"^kpc-private-[a-f0-9]{32}$"))throw new TesterException("Private worker owner is missing.");
-        using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(90));
         await using var pipe=new NamedPipeClientStream(".",name,PipeDirection.In,PipeOptions.Asynchronous|PipeOptions.CurrentUserOnly);
         await pipe.ConnectAsync(timeout.Token);
+#endif
         var metadata=await ReadFrame(pipe,4*1024*1024,timeout.Token);
         var instructions=await ReadFrame(pipe,MaximumPackage,timeout.Token);
         try

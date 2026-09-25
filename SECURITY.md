@@ -7,7 +7,8 @@
   The listener enforces bounded headers, per-request deadlines, exact Host, GET,
   and unique parameters, and ignores unrelated browser requests.
 - The public ID, verification date and opaque community-server session are
-  persisted with per-user Windows DPAPI. No assertion, browser cookie, Steam login
+  persisted with per-user Windows DPAPI, or Linux desktop keyring storage. Without
+  a Linux keyring, sign-in is retained only in memory for that launcher session. No assertion, browser cookie, Steam login
   token, password or Guard code is saved. Codes are bound atomically to the identity
   derived from the server session, never a caller-supplied Steam ID. Server access
   is checked for private downloads and every new launch ticket.
@@ -16,7 +17,9 @@
   The signing private key stays on the server. Signed code executes with the
   launcher's normal user privileges; the private update administrator is trusted
   to supply code. Generic tool caches are checked against a signed file list.
-- Private instructions are loaded from RAM through same-user named pipes and
+- Private instructions are loaded from RAM through same-user named pipes on Windows
+  or an ephemeral IPv4 loopback connection with a random 256-bit capability for
+  the Linux game worker, and
   temporary workers. Scripts are passed through stdin. The launcher does not save
   instruction archives, recipe scripts or hook scripts to the tester filesystem.
   This is redistribution friction, not DRM: memory, local IPC, dumps, paging,

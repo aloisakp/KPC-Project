@@ -4,10 +4,12 @@ namespace KpcLauncher.Core;
 
 public sealed class RelayCommand(Action execute, Func<bool>? canExecute = null) : ICommand
 {
+    private static event EventHandler? RequerySuggested;
+    public static void Requery() => RequerySuggested?.Invoke(null, EventArgs.Empty);
     public event EventHandler? CanExecuteChanged
     {
-        add => CommandManager.RequerySuggested += value;
-        remove => CommandManager.RequerySuggested -= value;
+        add => RequerySuggested += value;
+        remove => RequerySuggested -= value;
     }
 
     public bool CanExecute(object? parameter) => canExecute?.Invoke() ?? true;

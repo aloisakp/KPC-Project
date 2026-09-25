@@ -1,117 +1,57 @@
-# Native Linux Steam with the launcher under Wine (experimental)
+# Linux installation
 
-Version 0.6.2 includes a native Python helper for **Linux Steam**, including the
-Flatpak edition. The launcher itself is still a Windows WPF application run by
-Wine. A folder picker alone cannot make Windows process APIs see native Steam.
+The Linux installer and launcher are native Linux applications. They do not run
+the Windows launcher under Wine, and require no terminal commands.
 
-## Quick start
+1. Download **[KPCLauncher-linux-Setup.run](https://github.com/aloisakp/KPC-Project/releases/latest/download/KPCLauncher-linux-Setup.run)**.
+2. In your file manager, open the file's **Properties → Permissions** and enable
+   **Allow executing as a program** if needed. Some desktops call this **Executable**.
+   Browsers generally do not preserve Linux executable permissions on downloads.
+3. Double-click it and choose **Run**. Click **Choose folder** or edit the destination,
+   then **Install**. Choose a local folder you can write to.
+4. Open **KPC Launcher** from your applications menu. Authorize Steam in your browser.
+5. Choose your game storage in Settings. This is separate from the launcher location.
 
-1. Download **KPCLauncher-Portable.zip** from the release and extract it into any
-   folder you choose. Keep `KpcLauncher.exe`, `linux-start.py`, and this document
-   together. No launcher installation or fixed destination is required.
-2. Use a working Wine installation with matching `wine` and `winepath` commands,
-   and Python **3.9 or newer**. Start native Steam once and sign in online.
-3. Open a terminal in the extracted folder and run:
+Requirements: x86-64 Linux with glibc, a desktop providing X11 or XWayland,
+fontconfig and the usual .NET native dependencies. The release workflow tests
+Ubuntu 24.04. ARM, Alpine/musl and a Wayland-only session without XWayland are not
+currently supported. The .NET runtime is bundled.
 
-   ```sh
-   python3 linux-start.py
-   ```
+## Steam and the game
 
-4. Keep that terminal open while using the launcher. Authorize the same Steam
-   account in the browser, choose separate download storage, then press Install.
+Native Steam and Flatpak Steam data locations are detected automatically. If both
+exist, the running installation is preferred when unambiguous. Otherwise select
+the intended data folder in Settings. It contains `steamapps` and `ubuntu12_32`
+or `ubuntu12_64`; it is not `/usr/bin`. Start Steam once after installing it.
+Keep Steam online and signed in to the account authorized in your browser.
 
-If both Steam editions are installed, explicitly choose one:
+The launcher and depot downloads do not need Wine. The game and its signed
+Windows tooling still do. The launcher looks for Proton in your Steam libraries,
+then a system Wine installation. If needed, install **Proton Experimental** through
+**Steam → Library → Tools** and retry. No console setup or Python helper is needed.
+Game tooling uses its own environment under the launcher settings directory.
 
-```sh
-python3 linux-start.py --steam native
-python3 linux-start.py --steam flatpak
-```
+This is the first native Linux release. Automated tests cover native detection,
+account/log validation, installer behavior, both graphical windows, and Windows
+worker startup under Wine. Real Steam depot downloads, Flatpak/Proton combinations
+and community gameplay still need testing on players' machines.
 
-Native Steam's launch command is found on PATH (like `command -v steam`). Flatpak
-is checked using `flatpak info com.valvesoftware.Steam` and invoked with
-`flatpak run com.valvesoftware.Steam`. The executable and the **data folder** are
-different: `/usr/bin/steam` is not where Steam's logs or downloaded depots live.
+Character capture from the retail game is currently Windows-only because the
+exporter cannot attach across separate Proton environments. Existing exported
+characters can be imported on Linux through the normal Play flow.
 
-The helper searches `~/.local/share/Steam`, `~/.steam/steam`, `~/.steam/root`, and
-Flatpak's Steam folders under `~/.var/app/com.valvesoftware.Steam`. Aliases are
-resolved to their real locations. For a custom data folder:
+## Updates and settings
 
-```sh
-python3 linux-start.py --steam native --steam-root '/path/to/Steam'
-```
+The launcher checks for releases and offers the Linux installer. It verifies the
+download checksum and preselects your existing installation directory. Install
+the update and open the new launcher from the applications menu; close the old
+window. Previous program versions are retained in the installation's `versions`
+folder; game files and settings remain separate.
 
-You can also select the data folder under **Settings → Steam** while the helper
-is running. Choose the folder containing `steamapps` and `ubuntu12_32`, not
-`/usr/bin`, a game folder, or `steamapps` itself. The selection is remembered;
-an explicit `--steam-root` takes precedence on the next start. Do not use symlinks
-inside download staging or storage. Root aliases such as `~/.steam/steam` are
-resolved before the launcher receives the path.
+Settings/logs live in `$XDG_DATA_HOME/KPCLauncher`, normally
+`~/.local/share/KPCLauncher`. If `secret-tool` and an unlocked desktop keyring are
+available, sign-in is remembered there. Otherwise you sign in again after closing
+the launcher; account tokens are not saved as plaintext files.
 
-For an existing Wine prefix or a custom Wine build:
-
-```sh
-WINEPREFIX='/path/to/prefix' python3 linux-start.py \
-  --wine '/path/to/bin/wine' --winepath '/path/to/bin/winepath'
-```
-
-Run the Python helper on the host Linux system. Running it inside Wine or a
-Flatpak/Bottles sandbox is not supported. Bottles, Lutris, Proton, and Steam Deck
-integration have not been validated; do not assume their runtime isolation or
-Wine binaries can be substituted without configuration.
-
-## What this version covers
-
-- Native/Flatpak Steam discovery, current-process account verification, and
-  fixed depot download commands without `steam.exe`.
-- Validation of Steam's Linux completion paths against the selected data folder.
-- Download progress, archive preservation, and the existing signed community
-  build/play flow in Wine. Community gameplay still depends on the private
-  runtime's own Wine compatibility and has **not** been validated by these tests.
-
-**Character export from native Steam is disabled in this version.** The retail
-game can run in a separate Proton/Wine environment; safely finding and attaching
-the Windows exporter across that boundary needs additional work. Windows Steam
-export remains available and now uses the saved Steam folder.
-
-The helper reads only live Steam process identity and connection/download logs.
-It does not read Steam passwords or saved login tokens. It accepts only the two
-pinned depot requests, checks the authorized account again before launching a
-command, and uses argument arrays rather than shell command strings. Its API
-binds only to `127.0.0.1` on a random port and requires a random, per-launch bearer
-token passed through the child environment. No firewall change or public port is
-required. The helper stops when its Wine launcher process exits; closing its
-terminal also makes subsequent launcher checks fail closed. It never stops Steam.
-
-The portable build has no automatic installer updates. To upgrade, close the
-launcher and helper and extract the new portable release. Launcher settings remain
-in the Wine prefix; preserved archives and game output stay in your selected storage.
-
-## Testing and troubleshooting
-
-This release has automated Windows launcher tests and native Linux helper tests,
-including a real Linux process fixture, account switch/logout checks, stale-log
-rejection, command validation, and loopback authentication. These are **not** an
-end-to-end test with Wine, Steam downloads, or gameplay on your distribution.
-
-If detection fails, report your distribution, Wine version, Steam edition, the
-helper's terminal error, and the launcher log. Do not send passwords, session
-files, or environment dumps. A missing/ambiguous process or unreadable account
-log blocks downloads rather than trusting a saved Steam login.
-
-## Custom installer destination
-
-For the normal Windows installer, Velopack supports an explicit destination:
-
-```powershell
-.\KPCLauncher-win-Setup.exe --installto 'D:\Apps\KPCLauncher'
-```
-
-Use a dedicated empty folder for a new installation. This does not move an
-already installed launcher. Under Wine the destination is a Wine/Windows path,
-for example `wine KPCLauncher-win-Setup.exe --installto 'C:\Apps\KPCLauncher'`.
-For native Linux Steam, the portable helper workflow above is the supported
-experimental entry point. There is no new graphical directory-selection wizard.
-
-References: [Velopack installer options](https://docs.velopack.io/reference/cli/content/setup-windows),
-[Valve's Steam for Linux tracker](https://github.com/ValveSoftware/steam-for-linux),
-[Flatpak Steam project](https://github.com/flathub/com.valvesoftware.Steam).
+The Windows installer is exclusively for Windows. The former portable ZIP and
+`linux-start.py` entry point have been retired.

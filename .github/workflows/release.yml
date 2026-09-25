@@ -13,123 +13,138 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  linux-helper:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Test native Linux Steam helper
-        run: python3 -m unittest discover -s tests -p test_linux_start.py -v
-
-  release:
-    needs: linux-helper
+  windows:
     runs-on: windows-latest
     steps:
-      - name: Check out source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-
-      - name: Install .NET SDK
-        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: "8.0.x"
-
-      - name: Validate release version
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $version = (Get-Content -LiteralPath RELEASE_VERSION -Raw).Trim()
-          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid RELEASE_VERSION' }
-          "RELEASE_VERSION=$version" >> $env:GITHUB_ENV
-          $existing = gh release view "v$version" --json isDraft --jq '.isDraft' 2>$null
-          if ($LASTEXITCODE -eq 0 -and $existing -eq 'false') {
-            throw 'This version is already published; increase RELEASE_VERSION.'
-          }
-          exit 0
-
-      - name: Security regression tests and source audit
+      - name: Windows security tests and source audit
         shell: pwsh
         run: |
           dotnet run --project tests/SecurityTests.csproj -c Release
-          if ($LASTEXITCODE -ne 0) { throw 'Security tests failed' }
+          if ($LASTEXITCODE -ne 0) { throw 'Windows tests failed' }
           ./Audit-Source.ps1
-          dotnet list KpcLauncher.csproj package --vulnerable --include-transitive --format json > advisories.json
-          if ($LASTEXITCODE -ne 0) { throw 'Dependency audit failed' }
-          $audit = Get-Content advisories.json -Raw | ConvertFrom-Json
-          if ($audit.problems) { throw 'Dependency advisory service reported a problem' }
-          foreach ($project in $audit.projects) {
-            foreach ($framework in $project.frameworks) {
-              if ($framework.topLevelPackages -or $framework.transitivePackages) {
-                throw 'Known vulnerable dependency found'
-              }
-            }
-          }
-
-      - name: Build installer and update packages
-        shell: pwsh
-        run: ./publish.ps1 -Version $env:RELEASE_VERSION
-
-      - name: Verify assets and generate checksums
+      - name: Package Windows installer and updates
         shell: pwsh
         run: |
-          $directory = (Resolve-Path artifacts/releases).Path
-          foreach ($name in @('KPCLauncher-win-Setup.exe', "KPCLauncher-$env:RELEASE_VERSION-full.nupkg", 'releases.win.json', 'KPCLauncher-Portable.zip')) {
-            if (-not (Test-Path -LiteralPath (Join-Path $directory $name) -PathType Leaf)) {
-              throw "Required release asset missing: $name"
-            }
-          }
-          Get-ChildItem -LiteralPath $directory -File |
-            Sort-Object Name |
-            ForEach-Object {
-              $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-              "$hash  $($_.Name)"
-            } | Set-Content -LiteralPath (Join-Path $directory 'SHA256SUMS.txt') -Encoding ascii
+          ./publish.ps1 -Version (Get-Content RELEASE_VERSION -Raw).Trim()
+          ./tests/audit-dependencies.ps1 KpcLauncher.csproj Installer/Windows/KpcSetup.csproj
+          New-Item -ItemType Directory -Force artifacts/ui | Out-Null
+          $env:KPC_SMOKE_SCREENSHOT = Join-Path $PWD 'artifacts/ui/windows-installer.png'
+          $process = Start-Process -FilePath artifacts/releases/KPCLauncher-win-Setup.exe -ArgumentList '--smoke-test' -PassThru -WindowStyle Hidden
+          if (-not $process.WaitForExit(30000)) { throw 'Installer UI smoke test timed out' }
+          if ($process.ExitCode -ne 0 -or -not (Test-Path $env:KPC_SMOKE_SCREENSHOT)) { throw 'Installer UI smoke test failed' }
+          Remove-Item Env:KPC_SMOKE_SCREENSHOT
+          $env:KP_RELAY_SANDBOX_ROOT = Join-Path $env:RUNNER_TEMP 'kpc-install-smoke-state'
+          New-Item -ItemType Directory -Path $env:KP_RELAY_SANDBOX_ROOT | Out-Null
+          @{schema='kp-relay-sandbox/v1';baseline='23bbacb12f906a6d57ee0abcb80e02df901ed8b4';root=$env:KP_RELAY_SANDBOX_ROOT} | ConvertTo-Json | Set-Content (Join-Path $env:KP_RELAY_SANDBOX_ROOT '.relay-sandbox-owner.json')
+          $destination = Join-Path $env:RUNNER_TEMP 'KPC custom location é'
+          $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $PWD 'artifacts/windows-installer-payload.exe'))
+          $start.UseShellExecute = $false
+          foreach ($argument in @('--silent','--installto',$destination,'--','--smoke-test')) { $start.ArgumentList.Add($argument) }
+          $installed = [Diagnostics.Process]::Start($start)
+          if (-not $installed.WaitForExit(90000) -or $installed.ExitCode -ne 0) { throw 'Custom-location install failed' }
+          if (-not (Test-Path (Join-Path $destination 'current/KpcLauncher.exe'))) { throw 'Installer ignored chosen destination' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-release
+          path: artifacts/releases/*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: windows-ui
+          path: artifacts/ui/*
 
-      - name: Attest build provenance
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Native Linux regression tests
+        run: dotnet run --project tests/Native/NativeTests.csproj -c Release
+      - name: Build native Linux installer
+        run: bash publish-linux.sh
+      - name: Audit Linux dependencies
+        shell: pwsh
+        run: ./tests/audit-dependencies.ps1 Linux/KpcLauncher.Linux.csproj Installer/Linux/KpcLinuxSetup.csproj Worker/KpcGameWorker.csproj
+      - name: Install UI test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libfontconfig1 libx11-6 libice6 libsm6 wine
+      - name: Test actual installer, native UI and game worker
+        run: bash tests/linux-packaging.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: linux-release
+          path: artifacts/releases/KPCLauncher-linux-Setup.run
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: linux-ui
+          path: artifacts/ui/*
+
+  release:
+    needs: [windows, linux]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: '*-release'
+          merge-multiple: true
+          path: artifacts/releases
+      - name: Validate release assets and checksums
+        run: |
+          version="$(cat RELEASE_VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          cd artifacts/releases
+          test -f KPCLauncher-win-Setup.exe
+          test -f KPCLauncher-linux-Setup.run
+          test -f "KPCLauncher-$version-full.nupkg"
+          test -f releases.win.json
+          test ! -f KPCLauncher-Portable.zip
+          sha256sum KPCLauncher-win-Setup.exe KPCLauncher-linux-Setup.run "KPCLauncher-$version-full.nupkg" releases.win.json > SHA256SUMS.txt
+      - name: Attest both installers
         if: github.event.repository.private == false
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-path: |
             artifacts/releases/KPCLauncher-win-Setup.exe
+            artifacts/releases/KPCLauncher-linux-Setup.run
             artifacts/releases/*.nupkg
-            artifacts/releases/KPCLauncher-Portable.zip
-
-      - name: Create release
-        shell: pwsh
+      - name: Publish both installers together
         env:
           GH_TOKEN: ${{ github.token }}
           PRIVATE_REPOSITORY: ${{ github.event.repository.private }}
         run: |
-          $version = $env:RELEASE_VERSION
-          $tag = "v$version"
-          $assets = @(
-            'artifacts/releases/KPCLauncher-win-Setup.exe'
-            "artifacts/releases/KPCLauncher-$version-full.nupkg"
-            'artifacts/releases/releases.win.json'
-            'artifacts/releases/SHA256SUMS.txt'
-            'artifacts/releases/KPCLauncher-Portable.zip'
-          )
-          $provenance = if ($env:PRIVATE_REPOSITORY -eq 'false') {
-            "Includes GitHub build provenance. Verify with: gh attestation verify KPCLauncher-win-Setup.exe --repo $env:GITHUB_REPOSITORY"
-          } else { 'Private draft build: no public provenance attestation was generated.' }
-          $releaseNotes = Get-Content -LiteralPath "RELEASE-NOTES-$version.md" -Raw
-          $notes = $releaseNotes + "`n`nBuilt from $env:GITHUB_SHA by https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID`n$provenance`n"
-          $notesFile = Join-Path $env:RUNNER_TEMP 'release-notes.md'
-          Set-Content -LiteralPath $notesFile -Value $notes -Encoding utf8
-          $existing = gh release view $tag --json isDraft --jq '.isDraft' 2>$null
-          if ($LASTEXITCODE -eq 0) {
-            if ($existing -ne 'true') { throw 'Refusing to replace a published release' }
-            gh release upload $tag @assets --clobber
-            if ($LASTEXITCODE -ne 0) { throw 'Asset upload failed' }
-            gh release edit $tag --notes-file $notesFile --target $env:GITHUB_SHA
-            if ($LASTEXITCODE -ne 0) { throw 'Draft update failed' }
-          } else {
-            gh release create $tag @assets --draft --target $env:GITHUB_SHA --title "KPC Launcher $version" --notes-file $notesFile
-            if ($LASTEXITCODE -ne 0) { throw 'Release creation failed' }
-          }
-          if ($env:PRIVATE_REPOSITORY -eq 'false') {
-            gh release edit $tag --draft=false --latest
-            if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }
-          }
+          version="$(cat RELEASE_VERSION)"
+          tag="v$version"
+          notes="$RUNNER_TEMP/release-notes.md"
+          cp "RELEASE-NOTES-$version.md" "$notes"
+          printf '\nBuilt from %s by https://github.com/%s/actions/runs/%s\n' "$GITHUB_SHA" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> "$notes"
+          if gh release view "$tag" --json isDraft > "$RUNNER_TEMP/release-state.json" 2>/dev/null; then
+            test "$(jq -r .isDraft "$RUNNER_TEMP/release-state.json")" = true
+            gh release upload "$tag" artifacts/releases/* --clobber
+            gh release edit "$tag" --notes-file "$notes" --target "$GITHUB_SHA"
+          else
+            gh release create "$tag" artifacts/releases/* --draft --target "$GITHUB_SHA" --title "KPC Launcher $version" --notes-file "$notes"
+          fi
+          if [ "$PRIVATE_REPOSITORY" = false ]; then
+            gh release edit "$tag" --draft=false --latest
+            # The owner requested removal of the obsolete portable distribution.
+            if gh release view v0.6.2 --json assets --jq '.assets[].name' | grep -Fxq KPCLauncher-Portable.zip; then
+              gh release delete-asset v0.6.2 KPCLauncher-Portable.zip --yes
+            fi
+          fi

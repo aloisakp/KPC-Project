@@ -1,25 +1,30 @@
 # KPC Launcher
 
-A Windows launcher for preserving two pinned KurtzPel depot versions and accessing
+A launcher for Windows and Linux for preserving two pinned KurtzPel depot versions and accessing
 community testing. **Steam itself downloads the game files**, using the account
 signed in to your installed Steam client. Testers can then merge and play using
 private, signed instructions supplied by the community server.
 
 ## Download
 
-**[Download the latest installer](https://github.com/aloisakp/KPC-Project/releases/latest/download/KPCLauncher-win-Setup.exe)**
+| Windows (x64) | Linux (x64) |
+| --- | --- |
+| **[Download Windows installer](https://github.com/aloisakp/KPC-Project/releases/latest/download/KPCLauncher-win-Setup.exe)** | **[Download Linux installer](https://github.com/aloisakp/KPC-Project/releases/latest/download/KPCLauncher-linux-Setup.run)** |
 
-**[Portable download: extract anywhere](https://github.com/aloisakp/KPC-Project/releases/latest/download/KPCLauncher-Portable.zip)**
-includes the experimental native Linux Steam helper. Follow [LINUX.md](LINUX.md)
-for Wine setup, Flatpak Steam, and custom installation destinations.
+Both installers have a graphical **Choose folder** option. Select a writable
+location for the launcher; select your game storage separately in Settings.
+The Linux launcher runs natively. The Windows game still uses Proton or Wine.
+There is no portable ZIP. See [Linux installation](LINUX.md) for the graphical
+steps and current compatibility limits.
 
-[Latest release notes](https://github.com/aloisakp/KPC-Project/releases/latest) ·
+[Latest release notes](https://github.com/aloisakp/KPC-Project/releases/latest) Â·
 [All releases](https://github.com/aloisakp/KPC-Project/releases)
 
 To review the code and build the launcher yourself, follow the
 [build instructions](BUILDING.md).
 
-Windows 10 or later, an installed Steam client, an internet connection, and an
+Windows 10 or later, or a supported Linux desktop (see [LINUX.md](LINUX.md)),
+an installed Steam client, an internet connection, and an
 account entitled to download KurtzPel are required. Allow around 60 GB for the two
 archives and additional space for the merged game, temporary work and retained
 previous installations. Community connections use the public VPS relay.
@@ -33,9 +38,9 @@ previous installations. Community connections use the public VPS relay.
 4. Steam downloads each pinned version; the launcher files it into its own folder.
 5. Use **Verify downloads** to compare files with the SHA-256 receipt recorded when
    they were downloaded. Modified or older archives without a hash receipt are
-   requested from Steam again. Previous folders are retained with a .previous-…
+   requested from Steam again. Previous folders are retained with a .previous-â€¦
    suffix for manual review/removal when no download is active.
-6. For community testing, enter your tester code in **Settings → Redeem code**.
+6. For community testing, enter your tester code in **Settings â†’ Redeem code**.
    The server binds it to your verified Steam account. Normal Steam downloads and
    verification do not require a code; the tester merge and Play do.
 7. Press **Merge**. The launcher receives the current signed private instructions,
@@ -63,7 +68,7 @@ updates continue to come from the signed private runtime when you press Play.
 
 ## Character transfer and account deletion
 
-**Export character** is available to everyone in version 0.5.1: no tester code,
+**Export character** is currently a Windows feature (Linux can import existing exports): no tester code,
 archive downloads or merge are needed. Authorize Steam first. It opens the normal Steam game. Select the character to keep
 and enter the square. When capture finishes, the game closes and the launcher
 confirms the character's name. **Open exports folder** shows the character-named
@@ -76,7 +81,7 @@ Appearance, colours, sliders and the supported equipped outfit are transferred;
 weapon skins, aura and floating accessories are excluded. Imported clothing has
 its default stats, an **[Imported]** name, no trading and a 1 GP resale value.
 
-**Settings → Delete account** permanently removes your community game account,
+**Settings â†’ Delete account** permanently removes your community game account,
 characters, inventory, currencies, levels and progress after confirmation. Close
 the game first. Your Steam account, tester access and local export files remain,
 so you can reuse an export when starting again.
@@ -90,41 +95,22 @@ interface changes can still require a new executable. Tester access remains requ
 
 ## Storage and downloads
 
-### Steam folder selection and Wine
+### Steam detection and installation folders
 
-For **Windows Steam**, including Windows Steam running under Wine: if
-Steam is not found, click **Select Steam folder** on the home screen, or open
-**Settings → Steam → Select Steam folder**. Choose the Steam installation folder
-containing **steam.exe**, not `steamapps` or the KurtzPel game folder.
+The Windows launcher detects Windows Steam and accepts a folder containing
+`steam.exe`. The Linux launcher detects native and Flatpak Steam directly and
+accepts Steam's **data folder** containing `steamapps` and `ubuntu12_32` or
+`ubuntu12_64`. `/usr/bin` contains commands, not Steam's game data.
 
-The launcher remembers this location and uses it immediately, including after
-restart. Use **Use automatic detection** in Settings to clear the saved choice.
-If the selected installation moves or disappears, select its new folder.
+If Steam is missing or there are multiple installations, use **Settings → Steam →
+Choose/Select Steam folder**. The choice is remembered. Automatic detection clears
+that override. Start Steam once after installing it so its data folders exist.
 
-For **native Linux Steam**, version **0.6.2** adds an experimental helper. Extract
-the portable download anywhere and run `python3 linux-start.py` on Linux. It finds
-the native Steam command or Flatpak, verifies the running client's account, and
-handles Linux depot paths while the launcher runs under Wine. Use `--steam native`
-or `--steam flatpak` if both editions are installed. See [LINUX.md](LINUX.md) for
-requirements and setup. Selecting `/usr/bin` in the Windows folder picker is not
-sufficient. Native Steam character export is not supported yet; automated helper
-tests do not establish end-to-end Wine, Steam download, or gameplay compatibility.
-
-To choose the launcher program's destination, use the portable ZIP or the normal
-installer's `--installto` option with a dedicated folder:
-
-```powershell
-.\KPCLauncher-win-Setup.exe --installto 'D:\Apps\KPCLauncher'
-```
-
-The installer still uses its existing one-click UI; no folder-selection wizard
-is added. This option applies to a new installation, not relocating an existing
-one. Portable upgrades are manual. See [Velopack's installer options](https://docs.velopack.io/reference/cli/content/setup-windows).
-
-Choose storage on Steam's drive for fast moves instead of cross-drive copies.
-Storage must be separate from Steam and launcher directories. Links and junctions
-are rejected. Downloads remain subject to Steam's availability and entitlement
-checks; the launcher cannot grant access to unavailable content.
+The launcher and game files have separate destinations. The installer chooses
+where the program lives; **Settings → Choose storage folder** chooses where the
+archives and merged game live. Use a writable folder separate from Steam and the
+launcher. Symlinked download/staging folders are rejected. Steam controls content
+availability and account entitlement.
 
 The download bar is labeled **Estimated**. It uses the requested compressed size
 and Steam's periodic speed readings, stops advancing when readings go stale, and
@@ -138,10 +124,12 @@ byte progress instead. The window and Cancel remain responsive during these step
 Browser authorization uses [Steam OpenID 2.0](https://partner.steamgames.com/doc/features/auth).
 The community server validates Steam's signed response directly with Valve over
 HTTPS. The launcher remembers the public Steam ID, verification date and an opaque
-community-server session, protected with Windows DPAPI for the current user.
+community-server session. Windows protects them with per-user DPAPI. Linux uses
+the desktop keyring through `secret-tool` when available; otherwise sign-in lasts
+for the current launcher session and no session token is written to disk.
 Authorization is renewed after 30 days. The community session is not a Steam login
 or download credential.
-**Settings → Authorize Steam** switches the linked account; **Disconnect account**
+**Settings â†’ Authorize Steam** switches the linked account; **Disconnect account**
 removes that remembered identity.
 
 The launcher has no password field, QR renderer, Steam Guard prompt, SteamKit
@@ -165,11 +153,14 @@ leave **Authorize Steam** available. If the desktop identity cannot be read,
 restart Steam, sign in online, and retry. The launcher fails closed if a Steam
 update changes its identity/log format.
 
-Settings, remembered identity and logs are in %LOCALAPPDATA%/KPCLauncher:
+Settings and logs are in `%LOCALAPPDATA%/KPCLauncher` on Windows and
+`$XDG_DATA_HOME/KPCLauncher` (normally `~/.local/share/KPCLauncher`) on Linux:
 preservation-settings.json, steam-identity.dat, tester-session.dat and
 preservation.log. Generic runtime tools are cached in tester-tools. Private recipe
 packages, scripts and hooks are received into memory, used by temporary worker
-processes and released when those workers exit. Game output, verification receipts
+processes and released when those workers exit. Linux runs the signed Windows
+game tooling in a dedicated Proton/Wine environment through an authenticated,
+short-lived loopback connection; the interface and Steam integration remain native. Game output, verification receipts
 and runtime state remain on disk. This creates redistribution friction; it cannot
 prevent a tester or software running as that user from capturing memory, traffic
 after decryption, or game output. Windows may also page memory or create dumps.

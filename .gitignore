@@ -1,6 +1,8 @@
 bin/
 obj/
 artifacts/
+artifacts-linux-*/
+migrate-*.py
 .vs/
 *.user
 *.suo

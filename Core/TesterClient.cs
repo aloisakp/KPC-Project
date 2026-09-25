@@ -48,15 +48,15 @@ public sealed class TesterClient : IDisposable
     {
         try
         {
-            if (!File.Exists(SessionFile) || new FileInfo(SessionFile).Length > 16384) return null;
-            var plain = ProtectedData.Unprotect(File.ReadAllBytes(SessionFile), null, DataProtectionScope.CurrentUser);
+            var plain = SecretStore.Read(SessionFile);
+            if (plain is null) return null;
             try
             {
                 var saved = JsonSerializer.Deserialize<TesterSession>(plain, Json);
                 saved = MigrateSession(saved);
                 if (saved is not null && ValidSession(saved)) return saved;
                 // Do not retain or forward sessions bound to an obsolete endpoint.
-                File.Delete(SessionFile);
+                SecretStore.Delete(SessionFile);
                 return null;
             }
             finally { CryptographicOperations.ZeroMemory(plain); }
@@ -77,7 +77,7 @@ public sealed class TesterClient : IDisposable
     public void Forget()
     {
         Session = null;
-        if (File.Exists(SessionFile)) File.Delete(SessionFile);
+        SecretStore.Delete(SessionFile);
     }
     public async Task<ulong> SignInAsync(IReporter reporter, CancellationToken ct)
     {
@@ -112,9 +112,7 @@ public sealed class TesterClient : IDisposable
         var plain = JsonSerializer.SerializeToUtf8Bytes(Session, Json);
         try
         {
-            var temporary = SessionFile + "." + Guid.NewGuid().ToString("N") + ".tmp";
-            File.WriteAllBytes(temporary, ProtectedData.Protect(plain,null,DataProtectionScope.CurrentUser));
-            File.Move(temporary,SessionFile,true);
+            SecretStore.Write(SessionFile, plain);
         }
         finally { CryptographicOperations.ZeroMemory(plain); }
         return id;

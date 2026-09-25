@@ -4,6 +4,10 @@ $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath($PSScriptRoot)
 $sources = @((Get-ChildItem -LiteralPath $root -File -Filter '*.cs')) +
     @((Get-ChildItem -LiteralPath (Join-Path $root 'Core') -File -Filter '*.cs'))
+foreach ($directory in 'Linux', 'Worker', 'Installer/Windows', 'Installer/Linux') {
+    $sources += @(Get-ChildItem -LiteralPath (Join-Path $root $directory) -File |
+        Where-Object { $_.Extension -in '.cs', '.csproj', '.axaml' })
+}
 $forbidden = 'QRCoder|SteamKit2|BeginAuthSession|LoginWithCredentials|RefreshToken|PasswordBox|DangerousAcceptAnyServerCertificateValidator|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|gh[pousr]_[A-Za-z0-9]{30,}|PakAesKey|ApplyPakReaderPatch|Build-Map2LegacyPatch|SkyIslandLobbyBuilder|frida-client-gateway-bootstrap'
 $files = $sources + @((Get-ChildItem -LiteralPath $root -File -Filter '*.xaml')) +
     @((Get-Item -LiteralPath (Join-Path $root 'KpcLauncher.csproj')))

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion><Version>0.7.0</Version><DefineConstants>$(DefineConstants);LINUX</DefineConstants>
+    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../MainViewModel*.cs" />
+    <Compile Include="../Core/*.cs" Exclude="../Core/SteamInstall.cs;../Core/SecretStore.cs;../Core/LauncherUpdater.cs;../Core/CharacterExporter.cs;../Core/RelayDeviceIdentity.cs" />
+    <EmbeddedResource Include="../Assets/tester-signing-public.pem" LogicalName="KpcLauncher.tester-signing-public.pem" />
+    <AvaloniaResource Include="../Assets/launcher-logo.png" Link="Assets/launcher-logo.png" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.22" />
+  </ItemGroup>
+</Project>

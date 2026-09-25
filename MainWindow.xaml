@@ -40,7 +40,7 @@
                                RenderOptions.BitmapScalingMode="HighQuality"/>
                         <TextBlock Text="KPC" VerticalAlignment="Center"
                                    FontFamily="Segoe UI Semibold" FontSize="13"/>
-                        <TextBlock Text="Relay Dev" Margin="5,0,0,0" VerticalAlignment="Center"
+                        <TextBlock Text="Launcher" Margin="5,0,0,0" VerticalAlignment="Center"
                                    Foreground="{StaticResource Faint}" FontSize="13"/>
                     </StackPanel>
 

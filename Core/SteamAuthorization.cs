@@ -16,8 +16,8 @@ public sealed record SteamAuthorization(ulong SteamId, DateTimeOffset VerifiedAt
     {
         try
         {
-            if (!File.Exists(StorePath) || new FileInfo(StorePath).Length > 16384) return null;
-            var data = ProtectedData.Unprotect(File.ReadAllBytes(StorePath), null, DataProtectionScope.CurrentUser);
+            var data = SecretStore.Read(StorePath);
+            if (data is null) return null;
             var saved = JsonSerializer.Deserialize<SteamAuthorization>(data);
             return saved?.IsCurrent == true ? saved : null;
         }
@@ -28,12 +28,8 @@ public sealed record SteamAuthorization(ulong SteamId, DateTimeOffset VerifiedAt
     public void Save()
     {
         if (!IsCurrent) throw new InvalidOperationException("A current browser authorization is required.");
-        Directory.CreateDirectory(LauncherConfig.AppDataDir);
-        var data = ProtectedData.Protect(JsonSerializer.SerializeToUtf8Bytes(this), null, DataProtectionScope.CurrentUser);
-        var temporary = StorePath + ".tmp";
-        File.WriteAllBytes(temporary, data);
-        File.Move(temporary, StorePath, overwrite: true);
+        SecretStore.Write(StorePath, JsonSerializer.SerializeToUtf8Bytes(this));
     }
 
-    public static void Forget() => File.Delete(StorePath);
+    public static void Forget() => SecretStore.Delete(StorePath);
 }

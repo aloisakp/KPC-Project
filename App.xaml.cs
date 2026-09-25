@@ -8,6 +8,7 @@ public partial class App : Application
 {
     protected override void OnStartup(StartupEventArgs e)
     {
+        WindowsDesktopUi.Initialize();
         CrashLog.Start();
         CrashLog.Write("startup");
 

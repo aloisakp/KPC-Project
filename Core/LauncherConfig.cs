@@ -19,7 +19,6 @@ public sealed class LauncherConfig
 
     public string StorageRoot { get; set; } = "";
     public string SteamRoot { get; set; } = "";
-    public bool NativeSteam { get; set; }
 
     // An explicit owned override remains available to automated development tests;
     // the installed launcher uses the same settings/session directory as 0.5.3.

@@ -20,6 +20,12 @@ public partial class MainWindow : Window
         base.OnContentRendered(e);
         if (_initialized) return;
         _initialized = true;
+        if (Program.SmokeTest)
+        {
+            await Task.Delay(1000);
+            Close();
+            return;
+        }
         await _viewModel.InitializeAsync();
     }
 

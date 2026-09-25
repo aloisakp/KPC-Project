@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType><TargetFramework>net8.0-windows</TargetFramework><RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <UseWPF>true</UseWPF><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><Version>0.7.0</Version>
+    <AssemblyName>KPCLauncher-win-Setup</AssemblyName><ApplicationIcon>../../Assets/launcher.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup><EmbeddedResource Include="$(InstallerPayload)" LogicalName="setup.exe" Condition="'$(InstallerPayload)' != ''" /></ItemGroup>
+</Project>

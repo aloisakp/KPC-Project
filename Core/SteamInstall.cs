@@ -11,41 +11,27 @@ namespace KpcLauncher.Core;
 /// The installed Steam client owns every download and its credentials. Only public account
 /// identity and download status are read by the launcher.
 /// </summary>
-public sealed class SteamInstall
+public sealed partial class SteamInstall
 {
     private readonly Func<ulong?>? _readIdentity;
     private readonly Action<uint, uint, ulong>? _download;
-    private readonly LinuxSteamBridge? _linux;
 
     internal SteamInstall(string root, string executable, Func<ulong?>? readIdentity = null,
-        Action<uint, uint, ulong>? download = null, LinuxSteamBridge? linux = null)
+        Action<uint, uint, ulong>? download = null)
     {
         Root = root;
         Executable = executable;
         _readIdentity = readIdentity;
         _download = download;
-        _linux = linux;
     }
 
     public string Root { get; }
     public string Executable { get; }
-    public bool IsNativeLinux => _linux is not null;
-    public bool IsClientRunning
-    {
-        get
-        {
-            try { return _linux is null ? IsRunning : _linux.ReadState().Pid > 0; }
-            catch (SteamDownloadException) { return false; }
-        }
-    }
-
-    public static SteamInstall? FindConfigured(LauncherConfig config) => LinuxSteamBridge.IsConfigured
-        ? Find(Environment.GetEnvironmentVariable("KPC_LINUX_STEAM_ROOT") ?? (config.NativeSteam ? config.SteamRoot : null))
-        : config.NativeSteam ? null : Find(config.SteamRoot);
-
-    internal bool MatchesStaging(string reported, uint appId, uint depotId) => _linux is null
-        ? SafePaths.Same(reported, StagingDirectory(appId, depotId))
-        : appId == LauncherConfig.AppId && depotId == LauncherConfig.DepotId && _linux.MatchesStaging(reported);
+    public bool IsNativeLinux => false;
+    public bool IsClientRunning => IsRunning;
+    public static SteamInstall? FindConfigured(LauncherConfig config) => Find(config.SteamRoot);
+    internal bool MatchesStaging(string reported, uint appId, uint depotId) =>
+        SafePaths.Same(reported, StagingDirectory(appId, depotId));
 
     public string ConsoleLog => Path.Combine(Root, "logs", "console_log.txt");
     public string ContentLog => Path.Combine(Root, "logs", "content_log.txt");
@@ -59,19 +45,6 @@ public sealed class SteamInstall
 
     public static SteamInstall? Find(string? selectedRoot = null)
     {
-        if (LinuxSteamBridge.IsConfigured)
-        {
-            try
-            {
-                var bridge = LinuxSteamBridge.Connect(selectedRoot);
-                return new SteamInstall(bridge.Root, "", linux: bridge);
-            }
-            catch (Exception ex) when (ex is SteamDownloadException or InvalidOperationException or ArgumentException)
-            {
-                CrashLog.Write($"Native Steam detection: {ex.Message}");
-                return null;
-            }
-        }
         // A saved choice is authoritative. If it moved, ask for a new folder rather
         // than silently using another Steam installation and its account/logs.
         if (!string.IsNullOrWhiteSpace(selectedRoot)) return FromFolder(selectedRoot);
@@ -137,11 +110,6 @@ public sealed class SteamInstall
         get
         {
             if (_readIdentity is not null) return _readIdentity();
-            if (_linux is not null)
-            {
-                try { return _linux.ReadState().SteamId; }
-                catch (SteamDownloadException) { return null; }
-            }
             try
             {
                 var processes = Process.GetProcessesByName("steam");
@@ -174,36 +142,6 @@ public sealed class SteamInstall
         }
     }
 
-    internal static ulong? ParseConnectedIdentity(string log, DateTime processStarted, uint registryId)
-    {
-        var matches = Regex.Matches(log,
-            @"(?m)^\[(?<time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\] \[(?<state>Logged On|Logged Off|Logging On|Connecting|Connected),[^\]\r\n]*\] \[U:1:(?<id>\d+)\]");
-        if (matches.Count == 0) return null;
-        var last = matches[^1];
-        if (last.Groups["state"].Value != "Logged On" ||
-            !DateTime.TryParseExact(last.Groups["time"].Value, "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture,
-                DateTimeStyles.None, out var time) || time < processStarted.AddSeconds(-2) ||
-            !uint.TryParse(last.Groups["id"].Value, out var accountId) || accountId == 0 ||
-            registryId != 0 && registryId != accountId) return null;
-        var tail = log[(last.Index + last.Length)..];
-        if (tail.Contains("ConnectionDisconnected(", StringComparison.Ordinal)) return null;
-        return SteamOpenId.IndividualBase + accountId;
-    }
-
-    public void RequireAccount(SteamAuthorization authorization) =>
-        RequireAccount(authorization, ActiveSteamId);
-
-    internal static void RequireAccount(SteamAuthorization authorization, ulong? activeSteamId)
-    {
-        if (!authorization.IsCurrent)
-            throw new SteamDownloadException("Authorize your Steam account in the browser before downloading.");
-        if (activeSteamId is null)
-            throw new SteamDownloadException("Steam's signed-in account could not be verified. Keep Steam online, then retry.");
-        if (activeSteamId != authorization.SteamId)
-            throw new SteamDownloadException("Steam is using a different account from the one you authorized. " +
-                "Switch accounts in Steam or use Authorize Steam in the launcher. No further download will be requested.");
-    }
-
     /// <summary>
     /// A cancelled launcher can leave Steam downloading. Check Steam's current-process
     /// console history before touching shared staging or issuing another request.
@@ -212,11 +150,6 @@ public sealed class SteamInstall
     {
         // Injected test clients have no OS process; the parser is tested separately.
         if (_download is not null) return;
-        if (_linux is not null)
-        {
-            _linux.RequireIdle(appId, depotId);
-            return;
-        }
         var processes = Process.GetProcessesByName("steam");
         try
         {
@@ -236,42 +169,6 @@ public sealed class SteamInstall
         finally { foreach (var process in processes) process.Dispose(); }
     }
 
-    internal static bool HasPendingDepotDownload(TextReader reader, DateTime processStarted,
-        uint appId, uint depotId, string staging)
-    {
-        var pending = 0;
-        var awaitingStart = false;
-        var requestPattern = new Regex(@"\+download_depot\s+" + appId + @"\s+" + depotId + @"\s+\d+(?=\s|""|$)",
-            RegexOptions.CultureInvariant);
-        string? line;
-        while ((line = reader.ReadLine()) is not null)
-        {
-            if (line.Length < 22 || line[0] != '[' || line[20] != ']' ||
-                !DateTime.TryParseExact(line.AsSpan(1, 19), "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture,
-                    DateTimeStyles.None, out var at) || at < processStarted.AddSeconds(-2)) continue;
-            var message = line[22..];
-            if (message.StartsWith("ExecCommandLine:", StringComparison.Ordinal) && requestPattern.IsMatch(message))
-            {
-                pending++;
-                awaitingStart = true;
-            }
-            else if (message.StartsWith($"Downloading depot {depotId} (", StringComparison.Ordinal))
-            {
-                if (!awaitingStart) pending++; // Also recognize requests entered in Steam's console.
-                awaitingStart = false;
-            }
-            else if (Regex.Match(message, "^Depot download complete : \"(?<dir>.*)\" \\(manifest [0-9]+\\)") is { Success: true } complete &&
-                SafePaths.Same(complete.Groups["dir"].Value, staging))
-            {
-                pending = Math.Max(0, pending - 1);
-                awaitingStart = false;
-            }
-            // Failures omit the depot ID. Do not use an unrelated failure to declare the
-            // target idle; a restart clears unresolved requests from the old process.
-        }
-        return pending > 0;
-    }
-
     /// <summary>
     /// Brings Steam to a state where it can accept a download. If a sign-in is needed it is
     /// Steam's own window that asks for it - that prompt belongs to Valve, and no credential
@@ -279,8 +176,6 @@ public sealed class SteamInstall
     /// </summary>
     public async Task EnsureReadyAsync(IReporter reporter, CancellationToken cancellationToken)
     {
-        if (_linux is not null && !IsClientRunning)
-            throw new SteamDownloadException("Start native Linux Steam, sign in, then retry Install. Keep linux-start.py open.");
         if (!IsClientRunning)
         {
             reporter.Step("Starting Steam");
@@ -323,7 +218,6 @@ public sealed class SteamInstall
         RequireAccount(authorization);
         RequireDepotIdle(appId, depotId);
         if (_download is not null) { _download(appId, depotId, manifestId); return; }
-        if (_linux is not null) { _linux.Download(appId, depotId, manifestId, authorization.SteamId); return; }
         var info = new ProcessStartInfo(Executable) { UseShellExecute = false, CreateNoWindow = true };
         info.ArgumentList.Add("+download_depot");
         foreach (var argument in new ulong[] { appId, depotId, manifestId })

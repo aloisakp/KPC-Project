@@ -53,21 +53,16 @@ public sealed partial class MainViewModel
     {
         var session=_testers.Session;
         if(session is null)return;
-        var confirmed=System.Windows.MessageBox.Show(System.Windows.Application.Current.MainWindow,
+        var confirmed=await DesktopUi.Confirm("Delete account",
             "Permanently delete all characters, items, currency, levels and progress on this community server for Steam account " + session.SteamId +
-            "?\n\nThis cannot be undone. Close KurtzPel first.\n\nYour local character exports and tester access will be kept. You can use an export when you start again.",
-            "Delete account",System.Windows.MessageBoxButton.YesNo,System.Windows.MessageBoxImage.Warning,
-            System.Windows.MessageBoxResult.No)==System.Windows.MessageBoxResult.Yes;
+            "?\n\nThis cannot be undone. Close KurtzPel first.\n\nLocal exports and tester access will be kept.");
         if(!confirmed)return;
         await RunGuarded("Deleting game account",async ct=>
         {
             if(_testers.Session!=session)throw new TesterException("The signed-in account changed. Please try again.");
             await _testers.DeleteAccountAsync(ct).ConfigureAwait(false);
             Log_("Game account deleted. Local character exports are available for your next Play.",LogLevel.Good);
-            await System.Windows.Application.Current.Dispatcher.InvokeAsync(()=>
-                System.Windows.MessageBox.Show(System.Windows.Application.Current.MainWindow,
-                    "Account deleted. Press Play to start again. Your exported character files are still available.",
-                    "Account deleted",System.Windows.MessageBoxButton.OK,System.Windows.MessageBoxImage.Information));
+            await DesktopUi.Inform("Account deleted", "Account deleted. Press Play to start again. Your exported character files are still available.");
         });
     }
     private void ClearTesterAccess()
@@ -95,9 +90,9 @@ public sealed partial class MainViewModel
             if(status.Tester&&status.Release is not null)
             {
                 _testerRelease=TesterPackageHost.VerifyRelease(status.Release);_testerEnvelope=status.Release;_hasTesterAccess=true;
-                TesterAccessStatus=TesterBuildReady?"Tester access active · game ready":"Tester access active · merge required";
+                TesterAccessStatus=TesterBuildReady?"Tester access active Â· game ready":"Tester access active Â· merge required";
             }
-            else TesterAccessStatus="No tester access · enter your code in Settings";
+            else TesterAccessStatus="No tester access Â· enter your code in Settings";
         }
         catch {TesterAccessStatus="Tester service unavailable or sign-in required";throw;}
         finally {_ui.Post(()=>{RefreshTesterProperties();RefreshFacts();});}
@@ -145,9 +140,7 @@ public sealed partial class MainViewModel
         if(TesterPackageHost.VerifyRelease(envelope).PublicExportVersion!=1)
             throw new TesterException("The character export update is not available yet.");
         var capturedName=await TesterPackageHost.RunAsync(_testers,envelope,"export-character",Config.StorageRoot,this,ct,_authorization.SteamId).ConfigureAwait(false);
-        await System.Windows.Application.Current.Dispatcher.InvokeAsync(()=>
-            System.Windows.MessageBox.Show(System.Windows.Application.Current.MainWindow,
-                "Captured "+capturedName,"Character export",System.Windows.MessageBoxButton.OK,System.Windows.MessageBoxImage.Information));
+        await DesktopUi.Inform("Character export", "Captured " + capturedName);
     });
     private Task RunTesterOperationAsync(string operation)=>RunGuarded(operation switch {"merge"=>"Preparing tester game","export-character"=>"Preparing character export",_=>"Authorizing game launch"},async ct=>
     {
@@ -161,10 +154,7 @@ public sealed partial class MainViewModel
             await OfferCharacterImportAsync(ct).ConfigureAwait(false);
         var capturedName=await TesterPackageHost.RunAsync(_testers,_testerEnvelope!,operation,Config.StorageRoot,this,ct).ConfigureAwait(false);
         if(capturedName is not null)
-            await System.Windows.Application.Current.Dispatcher.InvokeAsync(()=>
-                System.Windows.MessageBox.Show(System.Windows.Application.Current.MainWindow,
-                    "Captured " + capturedName, "Character export", System.Windows.MessageBoxButton.OK,
-                    System.Windows.MessageBoxImage.Information));
+            await DesktopUi.Inform("Character export", "Captured " + capturedName);
         await RefreshTesterAccessAsync(ct).ConfigureAwait(false);
     });
     private async Task OfferCharacterImportAsync(CancellationToken ct)
@@ -174,11 +164,8 @@ public sealed partial class MainViewModel
         if(status.State!="empty")return;
         var file=CharacterExportFile.FindLatest(Config.StorageRoot);
         if(file is null)return;
-        var use=await System.Windows.Application.Current.Dispatcher.InvokeAsync(()=>
-            System.Windows.MessageBox.Show(System.Windows.Application.Current.MainWindow,
-                "There is an exported character file. Would you wish to use it for character creation?",
-                "Character creation",System.Windows.MessageBoxButton.YesNo,System.Windows.MessageBoxImage.Question,
-                System.Windows.MessageBoxResult.No)==System.Windows.MessageBoxResult.Yes);
+        var use=await DesktopUi.Confirm("Character creation",
+            "There is an exported character file. Would you wish to use it for character creation?");
         ct.ThrowIfCancellationRequested();
         if(!use)return;
         using var exported=await CharacterExportFile.ReadAsync(file,ct).ConfigureAwait(false);

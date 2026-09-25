@@ -3,10 +3,8 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
-using System.Windows;
 using System.Windows.Input;
 using KpcLauncher.Core;
-using Velopack;
 
 namespace KpcLauncher;
 
@@ -27,7 +25,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
     private SteamAuthorization? _authorization = SteamAuthorization.Load();
 
     private CancellationTokenSource? _work;
-    private UpdateInfo? _pendingUpdate;
+    private LauncherUpdate? _pendingUpdate;
     private DateTime _lastProgressPush = DateTime.MinValue;
     private DateTime _lastProgressLog = DateTime.MinValue;
 
@@ -39,7 +37,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
     {
         Config = LauncherConfig.Load();
         _steam = SteamInstall.FindConfigured(Config);
-        if (_steam?.IsNativeLinux == true) { Config.NativeSteam = true; Config.SteamRoot = _steam.Root; }
+
         _storageRoot = Config.StorageRoot;
         InitializeTesterCommands();
         TrySaveConfig();
@@ -149,14 +147,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
     private string _steamStatus = "";
     public string SteamStatus { get => _steamStatus; private set => Set(ref _steamStatus, value); }
     public bool IsSteamMissing => _steam is null;
-    public string SteamFolderHelp => LinuxSteamBridge.IsConfigured
-        ? "Select native Steam's data folder containing steamapps and ubuntu12_32 (not /usr/bin). Start Steam and sign in before Install."
-        : "For Windows Steam, select the folder containing steam.exe. For native Linux Steam, extract the portable download and start it with python3 linux-start.py.";
+    public string SteamFolderHelp => OperatingSystem.IsLinux()
+        ? "Choose Steam's data folder containing steamapps and ubuntu12_32 or ubuntu12_64. Native and Flatpak Steam are detected automatically."
+        : "Select the Windows Steam installation folder containing steam.exe.";
     public string ExportHelp => _steam?.IsNativeLinux == true
         ? "Character export is not yet supported with native Steam across Proton/Wine environments. Downloads and community play remain available for testing."
         : "Open KurtzPel through Steam, then enter the lobby with the character you want to export.";
     public string SteamFolder => _steam?.Root ?? (string.IsNullOrWhiteSpace(Config.SteamRoot)
-        ? "Not found - select the folder containing steam.exe" : Config.SteamRoot);
+        ? "Not found - select Steam folder" : Config.SteamRoot);
 
     private int _completedArchives;
     public int CompletedArchives
@@ -200,7 +198,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
 
     public string UpdateButtonText => _pendingUpdate is null
         ? "Check for updates"
-        : $"Install update {_pendingUpdate.TargetFullRelease.Version}";
+        : $"Install update {_pendingUpdate.Version}";
 
     public string CurrentVersion => _updater.CurrentVersion;
 
@@ -241,10 +239,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
 
             if (!_updater.IsInstalledBuild)
             {
-                UpdateStatus = LinuxSteamBridge.IsConfigured ? "Native Linux mode: update using the portable download"
-                    : "Use the installed launcher for automatic updates";
-                Log_(LinuxSteamBridge.IsConfigured ? "Close the launcher and helper, then extract the new portable release to update."
-                    : "This executable is not installed. The Setup installer enables automatic launcher updates.", LogLevel.Dim);
+                UpdateStatus = "Use the installed launcher for updates";
+                Log_("Install the launcher to enable updates.", LogLevel.Dim);
                 return;
             }
 
@@ -255,8 +251,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
                 return;
             }
 
-            UpdateStatus = $"Update {_pendingUpdate.TargetFullRelease.Version} is available";
-            Log_($"Launcher update {_pendingUpdate.TargetFullRelease.Version} is available.", LogLevel.Good);
+            UpdateStatus = $"Update {_pendingUpdate.Version} is available";
+            Log_($"Launcher update {_pendingUpdate.Version} is available.", LogLevel.Good);
 
             await InstallPendingUpdateAsync();
         }
@@ -284,15 +280,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
     {
         if (_pendingUpdate is null) return;
 
-        var version = _pendingUpdate.TargetFullRelease.Version.ToString();
-        if (MessageBox.Show(
-                $"KPC Launcher {version} is available.\n\nDownload, install, and restart now?",
-                "KPC Launcher update",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Information) != MessageBoxResult.Yes)
-        {
-            return;
-        }
+        var version = _pendingUpdate.Version.ToString();
+        if (!await DesktopUi.Confirm("KPC Launcher update",
+                $"KPC Launcher {version} is available.\n\nDownload and open the installer now?")) return;
 
         using var work = new CancellationTokenSource();
         _work = work;
@@ -375,48 +365,31 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
             }).ConfigureAwait(false);
     }
 
-    private void BrowseStorageRoot()
-    {
-        var dialog = new Microsoft.Win32.OpenFolderDialog
-        {
-            Title = "Choose where the preserved downloads will be stored",
-            InitialDirectory = Directory.Exists(Config.StorageRoot) ? Config.StorageRoot : "",
-        };
-
-        if (dialog.ShowDialog() != true) return;
-        StorageRoot = dialog.FolderName;
-        Log_($"Storage root: {Config.StorageRoot}", LogLevel.Dim);
-    }
-
-    private void OpenStorageFolder() => OpenFolder(Config.StorageRoot, create: true);
-
-    private void BrowseSteamFolder()
+    private async void BrowseStorageRoot()
     {
         try
         {
-            var dialog = new Microsoft.Win32.OpenFolderDialog
-            {
-                Title = LinuxSteamBridge.IsConfigured ? "Select native Steam's data folder (steamapps and ubuntu12_32)"
-                    : "Select the Steam installation folder containing steam.exe",
-                InitialDirectory = Directory.Exists(SteamFolder) ? SteamFolder : "",
-            };
-            if (dialog.ShowDialog() == true) SetSteamFolder(dialog.FolderName);
+            var folder = await DesktopUi.PickFolder("Choose where preserved downloads will be stored", Config.StorageRoot);
+            if (folder is null) return;
+            StorageRoot = folder;
+            Log_($"Storage root: {Config.StorageRoot}", LogLevel.Dim);
         }
-        catch (Exception ex)
-        {
-            MessageBox.Show($"Could not select the Steam folder: {ex.Message}", "Steam folder",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
-        }
+        catch (Exception ex) { await DesktopUi.Inform("Storage folder", ex.Message); }
     }
-
-    private void DetectSteam()
+    private void OpenStorageFolder() => OpenFolder(Config.StorageRoot, create: true);
+    private async void BrowseSteamFolder()
+    {
+        try
+        {
+            var folder = await DesktopUi.PickFolder(SteamFolderHelp, SteamFolder);
+            if (folder is not null) SetSteamFolder(folder);
+        }
+        catch (Exception ex) { await DesktopUi.Inform("Steam folder", ex.Message); }
+    }
+    private async void DetectSteam()
     {
         try { SetSteamFolder(null); }
-        catch (Exception ex)
-        {
-            MessageBox.Show($"Could not save the Steam folder: {ex.Message}", "Steam folder",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
-        }
+        catch (Exception ex) { await DesktopUi.Inform("Steam folder", ex.Message); }
     }
 
     internal void SetSteamFolder(string? root)
@@ -427,11 +400,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
             throw new IOException("Steam could not use that folder. " + SteamFolderHelp);
 
         var previous = Config.SteamRoot;
-        var previousNative = Config.NativeSteam;
         Config.SteamRoot = string.IsNullOrWhiteSpace(root) ? "" : steam!.Root;
-        Config.NativeSteam = LinuxSteamBridge.IsConfigured;
         try { Config.Save(); }
-        catch { Config.SteamRoot = previous; Config.NativeSteam = previousNative; throw; }
+        catch { Config.SteamRoot = previous; throw; }
         _steam = steam;
         RefreshState();
         Log_(steam is null ? "Steam was not detected. Select its installation folder."
@@ -450,8 +421,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
         {
             path = Path.GetFullPath(path);
             if (create) Directory.CreateDirectory(path);
-            var info = new ProcessStartInfo(Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"))
+            var info = new ProcessStartInfo(OperatingSystem.IsWindows() ? Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe") : "xdg-open")
                 { UseShellExecute = false };
             info.ArgumentList.Add(path);
             Process.Start(info)?.Dispose();
@@ -499,9 +470,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
 
     private void RefreshFacts()
     {
-        if (Application.Current?.Dispatcher is { } dispatcher && !dispatcher.CheckAccess())
+        if (!DesktopUi.CheckAccess())
         {
-            dispatcher.BeginInvoke(RefreshFacts);
+            DesktopUi.Post(RefreshFacts);
             return;
         }
 
@@ -608,18 +579,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
 
     // Plumbing
 
-    private sealed class Ui
-    {
-        public void Post(Action action)
-        {
-            var dispatcher = Application.Current?.Dispatcher;
-            if (dispatcher is null || dispatcher.CheckAccess()) action();
-            else dispatcher.BeginInvoke(action);
-        }
-    }
-
-    private static void Requery() =>
-        Application.Current?.Dispatcher.BeginInvoke(CommandManager.InvalidateRequerySuggested);
+    private sealed class Ui { public void Post(Action action) => DesktopUi.Post(action); }
+    private static void Requery() => DesktopUi.Post(RelayCommand.Requery);
 
     public void TrySaveConfig()
     {

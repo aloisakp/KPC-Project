@@ -6,5 +6,5 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
-  <ItemGroup><ProjectReference Include="../KpcLauncher.csproj" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="../KpcLauncher.csproj" /><Compile Remove="Native/**" /></ItemGroup>
 </Project>

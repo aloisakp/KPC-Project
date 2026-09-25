@@ -1,0 +1,60 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="KpcLauncher.Linux.MainWindow"
+        Title="KPC Launcher · Linux" Width="960" Height="700" MinWidth="760" MinHeight="580" Background="#151820">
+  <DockPanel Margin="24">
+    <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,16">
+      <TextBlock Text="KPC Launcher" FontSize="28" FontWeight="SemiBold" />
+      <TextBlock Text="Linux · Steam preservation and community testing" Foreground="#ACB6CC" />
+    </StackPanel>
+    <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0,16,0,0">
+      <TextBlock Text="{Binding StepName}" FontWeight="SemiBold" />
+      <ProgressBar Value="{Binding Progress}" IsIndeterminate="{Binding ProgressIndeterminate}" Height="5" />
+      <TextBlock Text="{Binding StatusLine}" TextWrapping="Wrap" />
+      <Button Content="Cancel operation" Command="{Binding CancelCommand}" HorizontalAlignment="Right" />
+    </StackPanel>
+    <TabControl>
+      <TabItem Header="Home">
+        <ScrollViewer><StackPanel Spacing="16" Margin="0,16">
+          <TextBlock Text="Preserve your game, then join the community" FontSize="20" FontWeight="SemiBold" />
+          <TextBlock Text="Keep Steam online and signed in to the account you authorize in your browser." TextWrapping="Wrap" Foreground="#ACB6CC" />
+          <WrapPanel><Button Margin="0,0,8,8" Content="{Binding DownloadButtonText}" Command="{Binding DownloadCommand}" />
+            <Button Margin="0,0,8,8" Content="{Binding MergeButtonText}" Command="{Binding MergeCommand}" />
+            <Button Margin="0,0,8,8" Content="Play" Command="{Binding PlayCommand}" /></WrapPanel>
+          <TextBlock Text="{Binding SteamStatus}" />
+          <TextBlock Text="{Binding TesterAccessStatus}" />
+          <TextBlock Text="{Binding SteamFolderHelp}" TextWrapping="Wrap" />
+          <Button Content="Select Steam folder" Command="{Binding BrowseSteamFolderCommand}" />
+          <TextBlock Text="Game compatibility" FontWeight="SemiBold" FontSize="16" />
+          <TextBlock Text="The launcher runs natively. For the Windows game, it detects Proton installed through Steam, or Wine. If neither is installed, install Proton Experimental from Steam → Library → Tools." TextWrapping="Wrap" Foreground="#ACB6CC" />
+          <TextBlock Text="Character transfer" FontWeight="SemiBold" FontSize="16" />
+          <TextBlock Text="{Binding ExportHelp}" TextWrapping="Wrap" />
+          <TextBlock Text="Existing character exports can still be imported when you press Play with an empty community account." TextWrapping="Wrap" Foreground="#ACB6CC" />
+          <Button Content="Open exports folder" Command="{Binding OpenExportsFolderCommand}" />
+        </StackPanel></ScrollViewer>
+      </TabItem>
+      <TabItem Header="Settings">
+        <ScrollViewer><StackPanel Spacing="12" Margin="0,16">
+          <TextBlock Text="Game files" FontWeight="SemiBold" FontSize="18" />
+          <TextBlock Text="{Binding StorageRoot}" TextWrapping="Wrap" />
+          <WrapPanel><Button Content="Choose storage folder" Command="{Binding BrowseCommand}" Margin="0,0,8,0" /><Button Content="Open folder" Command="{Binding OpenFolderCommand}" /></WrapPanel>
+          <TextBlock Text="Steam" FontWeight="SemiBold" FontSize="18" />
+          <TextBlock Text="{Binding SteamFolder}" TextWrapping="Wrap" />
+          <WrapPanel><Button Content="Choose Steam folder" Command="{Binding BrowseSteamFolderCommand}" Margin="0,0,8,0" /><Button Content="Detect automatically" Command="{Binding DetectSteamCommand}" Margin="0,0,8,0" /><Button Content="Open Steam folder" Command="{Binding OpenSteamFolderCommand}" /></WrapPanel>
+          <TextBlock Text="{Binding AuthorizedAccount}" />
+          <WrapPanel><Button Content="Authorize Steam" Command="{Binding AuthorizeCommand}" Margin="0,0,8,0" /><Button Content="Disconnect account" Command="{Binding ForgetAccountCommand}" /></WrapPanel>
+          <TextBlock Text="Tester access" FontWeight="SemiBold" FontSize="18" />
+          <TextBox Text="{Binding TesterCode, Mode=TwoWay}" Watermark="Enter tester code" PasswordChar="●" MaxWidth="450" HorizontalAlignment="Left" />
+          <WrapPanel><Button Content="Redeem code" Command="{Binding RedeemTesterCodeCommand}" Margin="0,0,8,0" /><Button Content="Check access" Command="{Binding CheckTesterAccessCommand}" /></WrapPanel>
+          <TextBlock Text="{Binding UpdateStatus}" />
+          <Button Content="{Binding UpdateButtonText}" Command="{Binding CheckUpdatesCommand}" />
+          <TextBlock Text="Community account" FontWeight="SemiBold" FontSize="18" />
+          <Button Content="Delete game account…" Command="{Binding DeleteAccountCommand}" />
+        </StackPanel></ScrollViewer>
+      </TabItem>
+      <TabItem Header="Activity">
+        <DockPanel Margin="0,16"><Button DockPanel.Dock="Top" Content="Open log file" Command="{Binding OpenLogCommand}" Margin="0,0,0,12" />
+          <ListBox ItemsSource="{Binding Log}"><ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Text}" TextWrapping="Wrap" /></DataTemplate></ListBox.ItemTemplate></ListBox>
+        </DockPanel>
+      </TabItem>
+    </TabControl>
+  </DockPanel>
+</Window>

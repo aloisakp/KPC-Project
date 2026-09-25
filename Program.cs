@@ -5,6 +5,7 @@ namespace KpcLauncher;
 
 public static class Program
 {
+    internal static bool SmokeTest;
     [STAThread]
     public static void Main(string[] args)
     {
@@ -14,6 +15,7 @@ public static class Program
             return;
         }
         VelopackApp.Build().Run();
+        SmokeTest = args.Contains("--smoke-test");
 
         var application = new App();
         application.InitializeComponent();
