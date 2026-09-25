@@ -45,7 +45,7 @@ public sealed partial class MainViewModel
         CheckTesterAccessCommand=new RelayCommand(()=>_=CheckTesterAccessAsync(),()=>!IsBusy&&_testers.Session is not null);
         MergeCommand=new RelayCommand(()=>_=RunTesterOperationAsync("merge"),()=>!IsBusy&&HasTesterAccess&&DownloadsComplete);
         PlayCommand=new RelayCommand(()=>_=RunTesterOperationAsync("play"),()=>!IsBusy&&HasTesterAccess&&TesterBuildReady);
-        ExportCharacterCommand=new RelayCommand(()=>_=ExportCharacterAsync(),()=>!IsBusy&&_steam is not null&&HasAuthorization);
+        ExportCharacterCommand=new RelayCommand(()=>_=ExportCharacterAsync(),()=>!IsBusy&&_steam is { IsNativeLinux: false }&&HasAuthorization);
         OpenExportsFolderCommand=new RelayCommand(()=>OpenFolder(Path.Combine(Config.StorageRoot,"Character Exports"),create:true));
         DeleteAccountCommand=new RelayCommand(()=>_=DeleteAccountAsync(),()=>!IsBusy&&_testers.Session is not null);
     }

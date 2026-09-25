@@ -9,3 +9,5 @@ artifacts/
 *.dat
 *.log
 advisories.json
+__pycache__/
+*.pyc

@@ -156,7 +156,7 @@
                             <Button Content="Export character" Command="{Binding ExportCharacterCommand}"/>
                             <Button Content="Open exports folder" Command="{Binding OpenExportsFolderCommand}" Style="{StaticResource Ghost}" Margin="8,0,0,0"/>
                         </WrapPanel>
-                        <TextBlock Text="Open KurtzPel through Steam, then enter the lobby with the character you want to export."
+                        <TextBlock Text="{Binding ExportHelp}"
                                    Style="{StaticResource Sub}" TextWrapping="Wrap" Margin="0,8,0,0"/>
                         <TextBlock Text="Exports are named after your character. Delete an unwanted file here, then export again. Play offers your most recent export."
                                    Style="{StaticResource Sub}" TextWrapping="Wrap" Margin="0,4,0,0"/>
@@ -221,7 +221,7 @@
                             Margin="0,0,0,26"/>
 
                     <TextBlock Text="Steam" Style="{StaticResource H2}"/>
-                    <TextBlock Text="If Steam is not detected (including under Wine), select its installation folder containing steam.exe. The selection is saved and applies immediately."
+                    <TextBlock Text="{Binding SteamFolderHelp}"
                                Style="{StaticResource Sub}" Margin="0,4,0,10" TextWrapping="Wrap"/>
                     <TextBox IsReadOnly="True" Text="{Binding SteamFolder, Mode=OneWay}" Margin="0,0,0,10"/>
                     <WrapPanel Margin="0,0,0,10">

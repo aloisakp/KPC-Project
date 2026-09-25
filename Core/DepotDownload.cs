@@ -71,7 +71,7 @@ public sealed partial class DepotDownload(SteamInstall steam, SteamAuthorization
                     ulong.TryParse(complete.Groups["manifest"].Value, out var finished) &&
                     finished == manifestId)
                 {
-                    if (!SafePaths.Same(complete.Groups["dir"].Value, staging))
+                    if (!steam.MatchesStaging(complete.Groups["dir"].Value, appId, depotId))
                         throw new SteamDownloadException("Steam reported an unexpected download folder; no files were moved.");
                     SafePaths.NoLinks(staging);
                     steam.RequireAccount(authorization);

@@ -19,6 +19,7 @@ public sealed class LauncherConfig
 
     public string StorageRoot { get; set; } = "";
     public string SteamRoot { get; set; } = "";
+    public bool NativeSteam { get; set; }
 
     // An explicit owned override remains available to automated development tests;
     // the installed launcher uses the same settings/session directory as 0.5.3.
@@ -86,7 +87,8 @@ public sealed class LauncherConfig
         if(HasDevelopmentRoot)return Path.Combine(RelayDevelopment.StateRoot,
             RelayDevelopment.SplitServer ? "split-storage" : "downloads");
         const string folder="KPC Preservation";
-        if(SteamInstall.Find()?.Root is {Length:>0} steamRoot && Path.GetPathRoot(steamRoot) is {Length:>0} drive)
+        // Native Steam commonly maps to Wine's Z: (/); do not write at the Linux filesystem root.
+        if(SteamInstall.Find() is {IsNativeLinux:false,Root:{Length:>0} steamRoot} && Path.GetPathRoot(steamRoot) is {Length:>0} drive)
             return Path.Combine(drive,folder);
         return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),folder);
     }

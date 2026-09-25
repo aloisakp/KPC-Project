@@ -13,7 +13,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  linux-helper:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Test native Linux Steam helper
+        run: python3 -m unittest discover -s tests -p test_linux_start.py -v
+
   release:
+    needs: linux-helper
     runs-on: windows-latest
     steps:
       - name: Check out source
@@ -66,7 +75,7 @@ jobs:
         shell: pwsh
         run: |
           $directory = (Resolve-Path artifacts/releases).Path
-          foreach ($name in @('KPCLauncher-win-Setup.exe', "KPCLauncher-$env:RELEASE_VERSION-full.nupkg", 'releases.win.json')) {
+          foreach ($name in @('KPCLauncher-win-Setup.exe', "KPCLauncher-$env:RELEASE_VERSION-full.nupkg", 'releases.win.json', 'KPCLauncher-Portable.zip')) {
             if (-not (Test-Path -LiteralPath (Join-Path $directory $name) -PathType Leaf)) {
               throw "Required release asset missing: $name"
             }
@@ -85,6 +94,7 @@ jobs:
           subject-path: |
             artifacts/releases/KPCLauncher-win-Setup.exe
             artifacts/releases/*.nupkg
+            artifacts/releases/KPCLauncher-Portable.zip
 
       - name: Create release
         shell: pwsh
@@ -99,6 +109,7 @@ jobs:
             "artifacts/releases/KPCLauncher-$version-full.nupkg"
             'artifacts/releases/releases.win.json'
             'artifacts/releases/SHA256SUMS.txt'
+            'artifacts/releases/KPCLauncher-Portable.zip'
           )
           $provenance = if ($env:PRIVATE_REPOSITORY -eq 'false') {
             "Includes GitHub build provenance. Verify with: gh attestation verify KPCLauncher-win-Setup.exe --repo $env:GITHUB_REPOSITORY"

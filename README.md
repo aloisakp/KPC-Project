@@ -9,6 +9,10 @@ private, signed instructions supplied by the community server.
 
 **[Download the latest installer](https://github.com/aloisakp/KPC-Project/releases/latest/download/KPCLauncher-win-Setup.exe)**
 
+**[Portable download: extract anywhere](https://github.com/aloisakp/KPC-Project/releases/latest/download/KPCLauncher-Portable.zip)**
+includes the experimental native Linux Steam helper. Follow [LINUX.md](LINUX.md)
+for Wine setup, Flatpak Steam, and custom installation destinations.
+
 [Latest release notes](https://github.com/aloisakp/KPC-Project/releases/latest) ·
 [All releases](https://github.com/aloisakp/KPC-Project/releases)
 
@@ -88,7 +92,7 @@ interface changes can still require a new executable. Tester access remains requ
 
 ### Steam folder selection and Wine
 
-Version **0.6.1** adds Wine support through manual Steam folder selection. If
+For **Windows Steam**, including Windows Steam running under Wine: if
 Steam is not found, click **Select Steam folder** on the home screen, or open
 **Settings → Steam → Select Steam folder**. Choose the Steam installation folder
 containing **steam.exe**, not `steamapps` or the KurtzPel game folder.
@@ -97,11 +101,25 @@ The launcher remembers this location and uses it immediately, including after
 restart. Use **Use automatic detection** in Settings to clear the saved choice.
 If the selected installation moves or disappears, select its new folder.
 
-Under Wine, choose the Windows Steam installation accessible in the launcher's
-Wine environment. This fixes missing registry-based detection; it does not add
-integration with the native Linux Steam client. Linux/Wine compatibility is
-community-tested and depends on your setup; this release has not been validated
-end to end under Wine. Steam sign-in and matching-account checks still apply.
+For **native Linux Steam**, version **0.6.2** adds an experimental helper. Extract
+the portable download anywhere and run `python3 linux-start.py` on Linux. It finds
+the native Steam command or Flatpak, verifies the running client's account, and
+handles Linux depot paths while the launcher runs under Wine. Use `--steam native`
+or `--steam flatpak` if both editions are installed. See [LINUX.md](LINUX.md) for
+requirements and setup. Selecting `/usr/bin` in the Windows folder picker is not
+sufficient. Native Steam character export is not supported yet; automated helper
+tests do not establish end-to-end Wine, Steam download, or gameplay compatibility.
+
+To choose the launcher program's destination, use the portable ZIP or the normal
+installer's `--installto` option with a dedicated folder:
+
+```powershell
+.\KPCLauncher-win-Setup.exe --installto 'D:\Apps\KPCLauncher'
+```
+
+The installer still uses its existing one-click UI; no folder-selection wizard
+is added. This option applies to a new installation, not relocating an existing
+one. Portable upgrades are manual. See [Velopack's installer options](https://docs.velopack.io/reference/cli/content/setup-windows).
 
 Choose storage on Steam's drive for fast moves instead of cross-drive copies.
 Storage must be separate from Steam and launcher directories. Links and junctions

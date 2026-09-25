@@ -38,7 +38,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
     public MainViewModel()
     {
         Config = LauncherConfig.Load();
-        _steam = SteamInstall.Find(Config.SteamRoot);
+        _steam = SteamInstall.FindConfigured(Config);
+        if (_steam?.IsNativeLinux == true) { Config.NativeSteam = true; Config.SteamRoot = _steam.Root; }
         _storageRoot = Config.StorageRoot;
         InitializeTesterCommands();
         TrySaveConfig();
@@ -76,8 +77,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
 
         if (_steam is null)
         {
-            Log_("Steam could not be found. Use Select Steam folder or Settings > Steam to choose "
-                 + "the folder containing steam.exe, including when running under Wine.", LogLevel.Warn);
+            Log_("Steam could not be found. " + SteamFolderHelp, LogLevel.Warn);
             return;
         }
 
@@ -149,6 +149,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
     private string _steamStatus = "";
     public string SteamStatus { get => _steamStatus; private set => Set(ref _steamStatus, value); }
     public bool IsSteamMissing => _steam is null;
+    public string SteamFolderHelp => LinuxSteamBridge.IsConfigured
+        ? "Select native Steam's data folder containing steamapps and ubuntu12_32 (not /usr/bin). Start Steam and sign in before Install."
+        : "For Windows Steam, select the folder containing steam.exe. For native Linux Steam, extract the portable download and start it with python3 linux-start.py.";
+    public string ExportHelp => _steam?.IsNativeLinux == true
+        ? "Character export is not yet supported with native Steam across Proton/Wine environments. Downloads and community play remain available for testing."
+        : "Open KurtzPel through Steam, then enter the lobby with the character you want to export.";
     public string SteamFolder => _steam?.Root ?? (string.IsNullOrWhiteSpace(Config.SteamRoot)
         ? "Not found - select the folder containing steam.exe" : Config.SteamRoot);
 
@@ -235,8 +241,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
 
             if (!_updater.IsInstalledBuild)
             {
-                UpdateStatus = "Use the installed launcher for automatic updates";
-                Log_("This executable is not installed. The Setup installer enables automatic launcher updates.", LogLevel.Dim);
+                UpdateStatus = LinuxSteamBridge.IsConfigured ? "Native Linux mode: update using the portable download"
+                    : "Use the installed launcher for automatic updates";
+                Log_(LinuxSteamBridge.IsConfigured ? "Close the launcher and helper, then extract the new portable release to update."
+                    : "This executable is not installed. The Setup installer enables automatic launcher updates.", LogLevel.Dim);
                 return;
             }
 
@@ -388,7 +396,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
         {
             var dialog = new Microsoft.Win32.OpenFolderDialog
             {
-                Title = "Select the Steam installation folder containing steam.exe",
+                Title = LinuxSteamBridge.IsConfigured ? "Select native Steam's data folder (steamapps and ubuntu12_32)"
+                    : "Select the Steam installation folder containing steam.exe",
                 InitialDirectory = Directory.Exists(SteamFolder) ? SteamFolder : "",
             };
             if (dialog.ShowDialog() == true) SetSteamFolder(dialog.FolderName);
@@ -415,12 +424,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
         if (IsBusy) return;
         var steam = SteamInstall.Find(root);
         if (!string.IsNullOrWhiteSpace(root) && steam is null)
-            throw new IOException("Choose the Steam installation folder containing steam.exe, not a game or steamapps folder.");
+            throw new IOException("Steam could not use that folder. " + SteamFolderHelp);
 
         var previous = Config.SteamRoot;
+        var previousNative = Config.NativeSteam;
         Config.SteamRoot = string.IsNullOrWhiteSpace(root) ? "" : steam!.Root;
+        Config.NativeSteam = LinuxSteamBridge.IsConfigured;
         try { Config.Save(); }
-        catch { Config.SteamRoot = previous; throw; }
+        catch { Config.SteamRoot = previous; Config.NativeSteam = previousNative; throw; }
         _steam = steam;
         RefreshState();
         Log_(steam is null ? "Steam was not detected. Select its installation folder."
@@ -466,6 +477,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
         SteamStatus = DescribeSteam();
         OnPropertyChanged(nameof(SteamFolder));
         OnPropertyChanged(nameof(IsSteamMissing));
+        OnPropertyChanged(nameof(ExportHelp));
         OnPropertyChanged(nameof(HasAuthorization));
         OnPropertyChanged(nameof(AuthorizedAccount));
         OnPropertyChanged(nameof(DownloadButtonText));
@@ -481,7 +493,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
         null => "Not found - select Steam folder",
         _ when _steam.ActiveSteamId is { } active => !HasAuthorization ? "Authorization required" :
             active == _authorization!.SteamId ? "Account matches" : "Different account",
-        _ when SteamInstall.IsRunning => "Running, signed out",
+        _ when _steam.IsClientRunning => "Running, signed out",
         _ => "Not running",
     };
 

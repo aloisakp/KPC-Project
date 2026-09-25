@@ -15,18 +15,37 @@ public sealed class SteamInstall
 {
     private readonly Func<ulong?>? _readIdentity;
     private readonly Action<uint, uint, ulong>? _download;
+    private readonly LinuxSteamBridge? _linux;
 
     internal SteamInstall(string root, string executable, Func<ulong?>? readIdentity = null,
-        Action<uint, uint, ulong>? download = null)
+        Action<uint, uint, ulong>? download = null, LinuxSteamBridge? linux = null)
     {
         Root = root;
         Executable = executable;
         _readIdentity = readIdentity;
         _download = download;
+        _linux = linux;
     }
 
     public string Root { get; }
     public string Executable { get; }
+    public bool IsNativeLinux => _linux is not null;
+    public bool IsClientRunning
+    {
+        get
+        {
+            try { return _linux is null ? IsRunning : _linux.ReadState().Pid > 0; }
+            catch (SteamDownloadException) { return false; }
+        }
+    }
+
+    public static SteamInstall? FindConfigured(LauncherConfig config) => LinuxSteamBridge.IsConfigured
+        ? Find(Environment.GetEnvironmentVariable("KPC_LINUX_STEAM_ROOT") ?? (config.NativeSteam ? config.SteamRoot : null))
+        : config.NativeSteam ? null : Find(config.SteamRoot);
+
+    internal bool MatchesStaging(string reported, uint appId, uint depotId) => _linux is null
+        ? SafePaths.Same(reported, StagingDirectory(appId, depotId))
+        : appId == LauncherConfig.AppId && depotId == LauncherConfig.DepotId && _linux.MatchesStaging(reported);
 
     public string ConsoleLog => Path.Combine(Root, "logs", "console_log.txt");
     public string ContentLog => Path.Combine(Root, "logs", "content_log.txt");
@@ -40,6 +59,19 @@ public sealed class SteamInstall
 
     public static SteamInstall? Find(string? selectedRoot = null)
     {
+        if (LinuxSteamBridge.IsConfigured)
+        {
+            try
+            {
+                var bridge = LinuxSteamBridge.Connect(selectedRoot);
+                return new SteamInstall(bridge.Root, "", linux: bridge);
+            }
+            catch (Exception ex) when (ex is SteamDownloadException or InvalidOperationException or ArgumentException)
+            {
+                CrashLog.Write($"Native Steam detection: {ex.Message}");
+                return null;
+            }
+        }
         // A saved choice is authoritative. If it moved, ask for a new folder rather
         // than silently using another Steam installation and its account/logs.
         if (!string.IsNullOrWhiteSpace(selectedRoot)) return FromFolder(selectedRoot);
@@ -105,6 +137,11 @@ public sealed class SteamInstall
         get
         {
             if (_readIdentity is not null) return _readIdentity();
+            if (_linux is not null)
+            {
+                try { return _linux.ReadState().SteamId; }
+                catch (SteamDownloadException) { return null; }
+            }
             try
             {
                 var processes = Process.GetProcessesByName("steam");
@@ -175,6 +212,11 @@ public sealed class SteamInstall
     {
         // Injected test clients have no OS process; the parser is tested separately.
         if (_download is not null) return;
+        if (_linux is not null)
+        {
+            _linux.RequireIdle(appId, depotId);
+            return;
+        }
         var processes = Process.GetProcessesByName("steam");
         try
         {
@@ -237,7 +279,9 @@ public sealed class SteamInstall
     /// </summary>
     public async Task EnsureReadyAsync(IReporter reporter, CancellationToken cancellationToken)
     {
-        if (!IsRunning)
+        if (_linux is not null && !IsClientRunning)
+            throw new SteamDownloadException("Start native Linux Steam, sign in, then retry Install. Keep linux-start.py open.");
+        if (!IsClientRunning)
         {
             reporter.Step("Starting Steam");
             reporter.Log("Steam is not running; starting it.", LogLevel.Dim);
@@ -279,6 +323,7 @@ public sealed class SteamInstall
         RequireAccount(authorization);
         RequireDepotIdle(appId, depotId);
         if (_download is not null) { _download(appId, depotId, manifestId); return; }
+        if (_linux is not null) { _linux.Download(appId, depotId, manifestId, authorization.SteamId); return; }
         var info = new ProcessStartInfo(Executable) { UseShellExecute = false, CreateNoWindow = true };
         info.ArgumentList.Add("+download_depot");
         foreach (var argument in new ulong[] { appId, depotId, manifestId })

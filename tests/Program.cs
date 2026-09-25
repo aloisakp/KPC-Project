@@ -52,6 +52,7 @@ try
     Check(LauncherConfig.Load().StorageRoot == Path.Combine(root,"downloads"), "relay defaults never reuse production download storage");
     Velopack.VelopackApp.Build().Run();
     SteamFolderChecks.Run(Check, root);
+    await LinuxSteamChecks.Run(Check, root);
     var updater = new LauncherUpdater();
     Check(await updater.CheckAsync() is null && !updater.IsInstalledBuild, "uninstalled test process cannot apply installer updates");
     var installRejected=false;

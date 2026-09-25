@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.6.1",
+    [string]$Version = "0.6.2",
     [string]$SignParams = "",
     [string]$ArtifactDirectory = "artifacts",
     [switch]$ExecutableOnly
@@ -102,5 +102,9 @@ if (-not [string]::IsNullOrWhiteSpace($SignParams)) {
 
 & $dotnetPath @packArguments
 if ($LASTEXITCODE -ne 0) { throw 'Velopack packaging failed.' }
+
+$portable = Join-Path $releaseDir 'KPCLauncher-Portable.zip'
+Compress-Archive -LiteralPath @((Join-Path $publishDir 'KpcLauncher.exe'),
+    (Join-Path $here 'linux-start.py'), (Join-Path $here 'LINUX.md')) -DestinationPath $portable -Force
 
 Write-Host "Release $Version created in $releaseDir"

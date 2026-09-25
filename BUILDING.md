@@ -27,16 +27,21 @@ A real transfer additionally requires a Steam entitlement and disk space.
 ## Packaging
 
 ```powershell
-./publish.ps1 -Version 0.6.1
+./publish.ps1 -Version 0.6.2
 ```
 
-The self-contained installer, update package and feed appear in artifacts/releases.
+The self-contained installer, update package, feed and `KPCLauncher-Portable.zip`
+appear in artifacts/releases. The portable ZIP contains the single-file launcher,
+`linux-start.py`, and `LINUX.md`; it can be extracted into a user-selected folder.
+It does not install Velopack's updater or shortcuts. Native helper tests run with
+`python3 -m unittest discover -s tests -p test_linux_start.py -v` on Linux, including
+an actual Linux process fixture. The release workflow requires that job to pass.
 Use -ArtifactDirectory artifacts/local-check for a separate local build. Packaging
 cleans only its publish, releases and build subdirectories; it keeps other artifacts.
 For a shareable local test executable without creating installer/update packages:
 
 ```powershell
-./publish.ps1 -Version 0.6.1 -ArtifactDirectory artifacts/pvp-local -ExecutableOnly
+./publish.ps1 -Version 0.6.2 -ArtifactDirectory artifacts/pvp-local -ExecutableOnly
 ```
 
 The result is `artifacts/pvp-local/publish/KpcLauncher.exe`. This mode leaves

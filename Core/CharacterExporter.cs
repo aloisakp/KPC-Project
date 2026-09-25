@@ -119,7 +119,8 @@ internal static class CharacterExporter
     {
         if(request.GetProperty("operation").GetString()!="export-character") throw new IOException("Export packages cannot start tester operations.");
         var steamId=ulong.Parse(request.GetProperty("exportSteamId").GetString()!);
-        var steam=SteamInstall.Find() ?? throw new IOException("Steam is not installed.");
+        var steam=SteamInstall.FindConfigured(LauncherConfig.Load()) ?? throw new IOException("Steam could not be found. Select its folder in Settings.");
+        if (steam.IsNativeLinux) throw new IOException("Character export from a separate Proton/Wine process is not supported by the native Steam helper yet.");
         void RequireSteamAccount(ulong expected) { if(steam.ActiveSteamId!=expected) throw new IOException("Keep Steam signed in to the account authorized in the launcher."); }
         RequireSteamAccount(steamId);
         var toolsRoot=request.GetProperty("toolsRoot").GetString()!;
