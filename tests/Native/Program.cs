@@ -66,8 +66,8 @@ try
             var script = "#!/bin/sh\nset -eu\n" +
                 "mkdir -p " + Quote(actual) + "\n" +
                 "printf '%s' \"$4\" > " + Quote(actual) + "/\"$4.bin\"\n" +
-                "printf " + Quote($"[{stamp}] Depot download complete : \"{reported}\" (manifest %s)\n") +
-                " \"$4\" >> " + Quote(steam.ConsoleLog) + "\n";
+                "printf '%s%s%s\\n' " + Quote($"[{stamp}] Depot download complete : \"{reported}\" (manifest ") +
+                " \"$4\" ')' >> " + Quote(steam.ConsoleLog) + "\n";
             File.WriteAllText(command, script);
             File.SetUnixFileMode(command, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
             var previousPath = Environment.GetEnvironmentVariable("PATH");
