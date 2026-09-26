@@ -1,0 +1,16 @@
+name: Steam recovery check
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  steam:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - run: sudo apt-get update && sudo apt-get install -y lib32gcc-s1
+      - name: Exercise Steam's actual depot resume state in an isolated directory
+        run: bash tests/steam-recovery-check.sh
