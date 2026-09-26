@@ -36,6 +36,7 @@ using var verifier = new FakeValve();
 using var http = new HttpClient(verifier);
 try
 {
+    ManifestRecoveryChecks.Run(Check, root, reporter);
     RelayDeviceChecks.Run(Check,root);
     foreach (var invalid in new[] { "", "relative", Path.GetPathRoot(root)! , root })
     {

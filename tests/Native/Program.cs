@@ -22,6 +22,7 @@ MemoryStream Payload(string? invalid = null)
 }
 try
 {
+    ManifestRecoveryChecks.Run(Check, root, new QuietReporter());
     var data = Path.Combine(root, "Steam with spaces é");
     Directory.CreateDirectory(Path.Combine(data, "steamapps")); Directory.CreateDirectory(Path.Combine(data, "ubuntu12_32")); Directory.CreateDirectory(Path.Combine(data, "logs"));
     Check(SteamInstall.FromFolder(data) is null, "native Steam requires an ELF binary, not steam.exe");
@@ -92,6 +93,64 @@ try
                 }
                 steam.RequireDepotIdle(844870, 844871);
                 Check(true, "completion still clears pending requests after staging has been moved");
+
+                // Reproduce the player's 0.7.1 state: the real files are in a .previous
+                // backup, while Steam instantly completes into an empty staging folder.
+                var archiveA = LauncherConfig.RequiredArchives[0];
+                var saved = actual + ".previous-" + Guid.NewGuid().ToString("N"); Directory.CreateDirectory(saved);
+                File.WriteAllText(Path.Combine(saved, archiveA.ManifestId + ".bin"), archiveA.ManifestId.ToString());
+                var cache = Path.Combine(data, "depotcache", $"844871_{archiveA.ManifestId}.manifest");
+                ManifestRecoveryChecks.Write(cache, archiveA.ManifestId, archiveA.ManifestId + ".bin",
+                    System.Text.Encoding.UTF8.GetBytes(archiveA.ManifestId.ToString()));
+                var recoveredConfig = new LauncherConfig { StorageRoot = Path.Combine(root, "Recovered archives") };
+                Directory.CreateDirectory(recoveredConfig.ArchiveDirectory(archiveA));
+                Directory.CreateDirectory(actual);
+                var commands = Path.Combine(root, "steam-commands.txt");
+                File.WriteAllText(command, script.Replace("set -eu\n", "set -eu\nprintf '%s\\n' \"$4\" >> " + Quote(commands) + "\n"));
+                await new PreservationPipeline(recoveredConfig, steam, authorization, new QuietReporter()).RunAsync(false, timeout.Token);
+                Check(PreservationPipeline.CompletedCount(recoveredConfig) == 2, "saved Archive A recovers and fresh Archive B completes in one Install");
+                Check(!File.ReadAllLines(commands).Contains(archiveA.ManifestId.ToString()), "verified saved archive sends no repeat Steam download command");
+                Check(File.ReadAllText(Path.Combine(recoveredConfig.ArchiveDirectory(archiveA), archiveA.ManifestId + ".bin")) == archiveA.ManifestId.ToString(),
+                    "original saved files reach archive storage with a verified receipt");
+                Check(!Directory.Exists(saved), "verified backup is filed once instead of repeatedly renamed");
+
+                var untouchedConfig = new LauncherConfig { StorageRoot = Path.Combine(root, "Existing archive") };
+                var untouched = untouchedConfig.ArchiveDirectory(archiveA); Directory.CreateDirectory(untouched);
+                File.WriteAllText(Path.Combine(untouched, "keep.bin"), "keep existing files");
+                var emptyScript = script.Replace("printf '%s' \"$4\" > " + Quote(actual) + "/\"$4.bin\"\n", "");
+                File.WriteAllText(command, emptyScript);
+                var emptyRejected = false;
+                try { await new PreservationPipeline(untouchedConfig, steam, authorization, new QuietReporter()).RunAsync(false, timeout.Token); }
+                catch (SteamDownloadException ex) when (ex.Message.Contains("empty")) { emptyRejected = true; }
+                Check(emptyRejected && File.ReadAllText(Path.Combine(untouched, "keep.bin")) == "keep existing files",
+                    "instant Steam completion with empty files leaves existing archive untouched");
+                Check(Directory.GetDirectories(untouchedConfig.StorageRoot).Length == 1 && PreservationPipeline.CompletedCount(untouchedConfig) == 0,
+                    "empty completion creates neither a receipt nor another destination backup");
+
+                var freshConfig = new LauncherConfig { StorageRoot = Path.Combine(root, "Fresh downloads without backup") };
+                var stateParent = Path.GetDirectoryName(actual)!;
+                var stateA = Path.Combine(stateParent, $"state_844870_844871_{archiveA.ManifestId}.patch");
+                var stateB = Path.Combine(stateParent, $"state_844870_844871_{LauncherConfig.RequiredArchives[1].ManifestId}.patch");
+                var legacyState = Path.Combine(stateParent, "state_844870_844871.patch");
+                var unrelatedState = Path.Combine(stateParent, "state_844870_999999.patch");
+                var otherManifest = Path.Combine(stateParent, "state_844870_844871_999.patch");
+                foreach (var state in new[] { stateA, stateB, legacyState, unrelatedState, otherManifest }) File.WriteAllText(state, "completed counters");
+                var writeFile = "printf '%s' \"$4\" > " + Quote(actual) + "/\"$4.bin\"\n";
+                var staleScript = script.Replace(writeFile,
+                    "if [ ! -f " + Quote(stateParent) + "/state_844870_844871_\"$4\".patch ]; then\n" + writeFile + "fi\n");
+                File.WriteAllText(command, staleScript);
+                await new PreservationPipeline(freshConfig, steam, authorization, new QuietReporter()).RunAsync(false, timeout.Token);
+                Check(PreservationPipeline.CompletedCount(freshConfig) == 2, "missing backup and stale completed counters trigger full fresh downloads");
+                Check(!File.Exists(stateA) && !File.Exists(stateB) && !File.Exists(legacyState), "only requested depot progress records are retired");
+                Check(File.ReadAllText(unrelatedState) == "completed counters" && File.ReadAllText(otherManifest) == "completed counters",
+                    "other depots and manifest progress records remain untouched");
+                Check(Directory.GetFiles(stateParent, "*.patch.previous-*").Length == 3, "retired Steam progress records are backed up, never deleted");
+                var target = Path.Combine(root, "protected-state"); File.WriteAllText(target, "keep");
+                File.CreateSymbolicLink(stateA, target);
+                Reject(() => SteamResumeState.Retire(actual, 844870, 844871, archiveA.ManifestId, new QuietReporter()),
+                    "linked Steam progress records are rejected");
+                Check(File.ReadAllText(target) == "keep", "progress reset does not alter a symlink target");
+                File.Delete(stateA);
             }
             finally { Environment.SetEnvironmentVariable("PATH", previousPath); }
         }

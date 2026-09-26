@@ -31,11 +31,16 @@ then a system Wine installation. If needed, install **Proton Experimental** thro
 **Steam → Library → Tools** and retry. No console setup or Python helper is needed.
 Game tooling uses its own environment under the launcher settings directory.
 
-Version 0.7.1 fixes depot downloads reported under `ubuntu12_32` or `ubuntu12_64`,
-including Steam completion messages containing backslashes. If 0.7.0 stopped with
-"Steam reported an unexpected download folder", update and retry **Install**.
-Untracked previous downloads are kept with a `.previous-...` suffix and may need
-to be downloaded again. No manual Steam-folder change is needed for this fix.
+Version 0.7.1 handles Steam's `ubuntu12_32` / `ubuntu12_64` download locations
+and backslashes in completion messages. Version 0.7.2 also recovers completed
+downloads saved in `.previous-...` folders when Steam immediately reports an empty
+download as complete. Leave these folders in place, update and retry **Install**.
+The launcher checks saved files against Steam's cached manifest before reusing them;
+checking a large archive can take several minutes. No terminal commands or manual
+file moves are needed. Incomplete or altered files are not adopted as complete.
+If the saved files have been deleted or cannot be recovered, the launcher backs up
+the matching Steam progress record and requests a fresh download. Other games'
+download records are left alone.
 
 Automated tests cover native detection,
 account/log validation, installer behavior, both graphical windows, and Windows

@@ -68,10 +68,31 @@ public sealed class PreservationPipeline(
 
             var stagingFolders = steam.StagingDirectories(LauncherConfig.AppId, LauncherConfig.DepotId).ToArray();
             steam.RequireDepotIdle(LauncherConfig.AppId, LauncherConfig.DepotId);
+            // Recover a completed download before moving staging aside or asking Steam
+            // to resume against its stale, already-complete transfer state.
+            var recovered = ArchiveRecovery.Find(steam, config, archive, reporter, cancellationToken);
+            if (recovered is not null)
+            {
+                steam.RequireAccount(authorization);
+                steam.RequireDepotIdle(LauncherConfig.AppId, LauncherConfig.DepotId);
+                if (!SafePaths.Same(recovered, directory))
+                    await FileIntoPlaceAsync(recovered, directory, cancellationToken).ConfigureAwait(false);
+                WriteStamp(directory, archive, cancellationToken);
+                foreach (var staging in stagingFolders) ClearStagingMarker(staging);
+                reporter.Log($"{archive.Label} recovered from saved files and verified against Steam's manifest. No download needed.", LogLevel.Good);
+                if (onArchiveReady is not null) await onArchiveReady(archive, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
             // Each supported location must be clean for this manifest before Steam starts.
             // Otherwise files from Archive A could be merged into Archive B in an alternate folder.
             foreach (var staging in stagingFolders) SafePaths.NoLinks(staging);
             foreach (var staging in stagingFolders) PrepareStaging(staging, archive.ManifestId);
+            if (steam.IsNativeLinux)
+            {
+                steam.RequireDepotIdle(LauncherConfig.AppId, LauncherConfig.DepotId);
+                foreach (var staging in stagingFolders)
+                    SteamResumeState.Retire(staging, LauncherConfig.AppId, LauncherConfig.DepotId, archive.ManifestId, reporter);
+            }
 
             reporter.Step($"Downloading {archive.Label}");
             reporter.Log($"{archive.Label} -> {directory}", LogLevel.Dim);
@@ -280,10 +301,13 @@ public sealed class PreservationPipeline(
     {
         SafePaths.NoLinks(from);
         SafePaths.NoLinks(to);
-        _ = SafePaths.Files(from).Count();
         if (!Directory.Exists(from))
             throw new SteamDownloadException(
                 $"Steam reported the download finished but left nothing in {from}.");
+        if (SafePaths.Files(from).Count(f => Path.GetRelativePath(from, f.FullName) != CompletionStamp) == 0)
+            throw new SteamDownloadException("Steam reported completion but its download folder is empty. " +
+                "Existing archives were left in place. Fully exit Steam, reopen it and retry Install. " +
+                "Keep any .previous folders so their files can be recovered.");
 
         if (Directory.Exists(to))
         {

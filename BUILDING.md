@@ -29,7 +29,7 @@ A real transfer additionally requires a Steam entitlement and disk space.
 Windows:
 
 ```powershell
-./publish.ps1 -Version 0.7.1
+./publish.ps1 -Version 0.7.2
 ```
 
 This builds the Windows launcher, Velopack update package/feed, and a graphical
@@ -42,7 +42,7 @@ Linux (on Linux, with .NET 8 SDK, Python 3 for packaging, and desktop libraries)
 
 ```sh
 dotnet run --project tests/Native/NativeTests.csproj -c Release
-bash publish-linux.sh 0.7.1
+bash publish-linux.sh 0.7.2
 ```
 
 The native Avalonia UI links the shared preservation, authorization and signed
@@ -111,3 +111,10 @@ Windows downloads use steam.exe +download_depot and follow Steam's console/conte
 Identity comes from Steam's active process and current connection log, cross-checked
 with ActiveUser when present. Changes to Steam's formats require a new live check;
 do not bypass the gate.
+
+The manual **Steam recovery check** workflow downloads an anonymous Valve SDK depot
+with native SteamCMD on an ephemeral Linux runner. It exercises completion after
+the output directory is moved, retires only that depot's saved progress record,
+and checks the fresh download against the first download's file checksums. It does
+not publish a release or use a player account. Launcher regression tests separately
+cover manifest-verified backup recovery and targeted progress-record retirement.

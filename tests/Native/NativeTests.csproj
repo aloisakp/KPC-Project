@@ -3,5 +3,6 @@
   <ItemGroup>
     <ProjectReference Include="../../Linux/KpcLauncher.Linux.csproj" />
     <Compile Include="../../Installer/Linux/InstallEngine.cs" Link="InstallEngine.cs" />
+    <Compile Include="../ManifestRecoveryChecks.cs" Link="ManifestRecoveryChecks.cs" />
   </ItemGroup>
 </Project>
