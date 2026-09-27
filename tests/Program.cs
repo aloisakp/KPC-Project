@@ -36,6 +36,12 @@ using var verifier = new FakeValve();
 using var http = new HttpClient(verifier);
 try
 {
+    if (args.Length == 2 && args[0] == "--export-preview")
+    {
+        await ExportSourceChecks.Run(Check, root, args[1]);
+        Console.WriteLine($"All {passed} export source checks passed.");
+        return;
+    }
     ManifestRecoveryChecks.Run(Check, root, reporter);
     RelayDeviceChecks.Run(Check,root);
     foreach (var invalid in new[] { "", "relative", Path.GetPathRoot(root)! , root })
@@ -267,6 +273,7 @@ try
         File.WriteAllText(Path.Combine(args[1], "cancelled.html"), SteamOpenId.BuildResultPage(false, "nonce"));
     }
     await TesterChecks.Run(Check,root);
+    await ExportSourceChecks.Run(Check, root, args.Length == 2 && args[0] == "--preview-dir" ? args[1] : null);
     await ExportProcessChecks.Run(Check);
     Console.WriteLine($"All {passed} security checks passed.");
 }

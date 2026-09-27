@@ -134,13 +134,19 @@ public sealed partial class MainViewModel
     }
     private Task ExportCharacterAsync()=>RunGuarded("Preparing character export",async ct=>
     {
-        if(_steam is null || _authorization is null)throw new TesterException("Steam authorization is required.");
-        _steam.RequireAccount(_authorization);
+        if(_authorization is null || !_authorization.IsCurrent)throw new TesterException("Steam authorization is required.");
+        var authorization = _authorization;
+        var sources = await Task.Run(() => CharacterExportSources.Discover(_steam), ct).ConfigureAwait(false);
+        var source = await DesktopUi.SelectExportSourceAsync(sources).ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
+        if (source is null) return;
+        if (_authorization != authorization) throw new TesterException("The signed-in account changed. Please try again.");
+        if (source.Platform == "steam") (_steam ?? throw new TesterException("Steam could not be found.")).RequireAccount(authorization);
         var envelope=await _testers.ExportReleaseAsync(ct).ConfigureAwait(false);
         if(TesterPackageHost.VerifyRelease(envelope).PublicExportVersion!=1)
             throw new TesterException("The character export update is not available yet.");
-        var capturedName=await TesterPackageHost.RunAsync(_testers,envelope,"export-character",Config.StorageRoot,this,ct,_authorization.SteamId).ConfigureAwait(false);
-        await DesktopUi.Inform("Character export", "Captured " + capturedName);
+        var capturedName=await TesterPackageHost.RunAsync(_testers,envelope,"export-character",Config.StorageRoot,this,ct,authorization.SteamId,source).ConfigureAwait(false);
+        await DesktopUi.Inform("Character export", "Captured " + capturedName + " from " + source.DisplayName);
     });
     private Task RunTesterOperationAsync(string operation)=>RunGuarded(operation switch {"merge"=>"Preparing tester game","export-character"=>"Preparing character export",_=>"Authorizing game launch"},async ct=>
     {

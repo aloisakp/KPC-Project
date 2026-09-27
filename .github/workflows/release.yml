@@ -144,8 +144,4 @@ jobs:
           fi
           if [ "$PRIVATE_REPOSITORY" = false ]; then
             gh release edit "$tag" --draft=false --latest
-            # The owner requested removal of the obsolete portable distribution.
-            if gh release view v0.6.2 --json assets --jq '.assets[].name' | grep -Fxq KPCLauncher-Portable.zip; then
-              gh release delete-asset v0.6.2 KPCLauncher-Portable.zip --yes
-            fi
           fi

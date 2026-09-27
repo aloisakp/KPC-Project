@@ -4,7 +4,6 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Microsoft.Win32.SafeHandles;
 
 namespace KpcLauncher.Core;
@@ -88,48 +87,39 @@ internal static class CharacterExporter
 
     internal static string FindRetailExecutable(string steamExe)
     {
-        var steamRoot = Path.GetDirectoryName(Path.GetFullPath(steamExe))!;
-        var libraries = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { steamRoot };
-        var libraryFile = Path.Combine(steamRoot, "steamapps", "libraryfolders.vdf");
-        if (File.Exists(libraryFile))
-        {
-            if (new FileInfo(libraryFile).Length > 1024 * 1024) throw new IOException("Steam's library list is too large.");
-            foreach (Match match in Regex.Matches(File.ReadAllText(libraryFile), "\"path\"\\s+\"([^\"]+)\""))
-                libraries.Add(Path.GetFullPath(match.Groups[1].Value.Replace("\\\\", "\\")));
-        }
-        var found = new List<string>();
-        foreach (var library in libraries)
-        {
-            var manifest = Path.Combine(library, "steamapps", "appmanifest_844870.acf");
-            if (!File.Exists(manifest)) continue;
-            if (new FileInfo(manifest).Length > 1024 * 1024) throw new IOException("Steam's game manifest is too large.");
-            var text = File.ReadAllText(manifest);
-            if (!Regex.IsMatch(text, "\"appid\"\\s+\"844870\"")) continue;
-            var install = Regex.Match(text, "\"installdir\"\\s+\"([^\"]+)\"");
-            if (!install.Success) continue;
-            var folder = install.Groups[1].Value;
-            if (folder is "." or ".." || folder.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) throw new IOException("Invalid Steam install folder.");
-            var exe = Path.Combine(library, "steamapps", "common", folder, "TheChase", "Binaries", "Win64", GameProcess + ".exe");
-            if (File.Exists(exe)) found.Add(Path.GetFullPath(exe));
-        }
+        var found = CharacterExportSources.FindSteam(steamExe);
         return found.Count == 1 ? found[0] : throw new IOException("Install KurtzPel in one Steam library before exporting a character.");
+    }
+
+    internal static void RequireRetailAccount(CharacterExportSource source, SteamInstall? steam, ulong steamId)
+    {
+        // Epic authenticates its own retail session. Community identity stays Steam.
+        if (source.Platform == "steam" && steam?.ActiveSteamId != steamId)
+            throw new IOException("Keep Steam signed in to the account authorized in the launcher.");
+        if (source.Platform is not ("steam" or "epic")) throw new IOException("Unsupported character export source.");
     }
 
     public static async Task RunAsync(JsonElement request, IReadOnlyDictionary<string,byte[]> assets, CancellationToken cancellationToken)
     {
         if(request.GetProperty("operation").GetString()!="export-character") throw new IOException("Export packages cannot start tester operations.");
         var steamId=ulong.Parse(request.GetProperty("exportSteamId").GetString()!);
-        var steam=SteamInstall.FindConfigured(LauncherConfig.Load()) ?? throw new IOException("Steam could not be found. Select its folder in Settings.");
-        if (steam.IsNativeLinux) throw new IOException("Character export from a separate Proton/Wine process is not supported by the native Steam helper yet.");
-        void RequireSteamAccount(ulong expected) { if(steam.ActiveSteamId!=expected) throw new IOException("Keep Steam signed in to the account authorized in the launcher."); }
-        RequireSteamAccount(steamId);
+        var steam=SteamInstall.FindConfigured(LauncherConfig.Load());
+        if (steam is { IsNativeLinux: true }) throw new IOException("Character export from a separate Proton/Wine process is not supported by the native Steam helper yet.");
+        if (!SteamOpenId.IsIndividualId(steamId)) throw new IOException("Steam authorization is required.");
+        var requested = request.TryGetProperty("exportSource", out var sourceJson) && sourceJson.ValueKind != JsonValueKind.Null
+            ? sourceJson.Deserialize<CharacterExportSource>(TesterClient.Json) : null;
+        var source = requested is null
+            ? new CharacterExportSource("steam", FindRetailExecutable(steam?.Executable ?? throw new IOException("Steam could not be found. Select its folder in Settings.")))
+            : CharacterExportSources.Resolve(requested, CharacterExportSources.Discover(steam));
+        void RequireSourceAccount() => RequireRetailAccount(source, steam, steamId);
+        RequireSourceAccount();
         var toolsRoot=request.GetProperty("toolsRoot").GetString()!;
         var storage=request.GetProperty("storageRoot").GetString()!;
         SafePaths.NoLinks(storage);
         Directory.CreateDirectory(storage);
         using var ownership=new FileStream(Path.Combine(storage,".kpc-tester-operation.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
         var reporter=new ExportReporter();
-        var retailExe = FindRetailExecutable(steam.Executable);
+        var retailExe = source.Executable;
         var existing = Process.GetProcessesByName(GameProcess);
         try { if (existing.Length != 0) throw new IOException("Close KurtzPel before starting a character export."); }
         finally { foreach (var process in existing) process.Dispose(); }
@@ -137,10 +127,14 @@ internal static class CharacterExporter
         var outputFolder = Path.Combine(storage, "Character Exports");
         SafePaths.NoLinks(outputFolder);
         var output = Path.Combine(outputFolder, ".capture-" + Guid.NewGuid().ToString("N") + ".tmp");
-        reporter.Step("Starting KurtzPel through your Steam library");
+        var launch = source.Platform == "steam"
+            ? (Executable: steam!.Executable, Arguments: new[] { "--", "steam://rungameid/844870" })
+            : CharacterExportSources.FindEpicLauncher(source.EpicAppId!);
+        cancellationToken.ThrowIfCancellationRequested();
+        reporter.Step("Starting KurtzPel through " + source.DisplayName);
         var startedAt = DateTime.UtcNow;
         // The same command Windows runs for a steam:// link ("steam.exe" -- "%1").
-        StartWithoutShell(steam.Executable, "--", "steam://rungameid/844870");
+        StartWithoutShell(launch.Executable, launch.Arguments);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromMinutes(3));
         Process? game = null;
@@ -148,7 +142,7 @@ internal static class CharacterExporter
         {
             while (game is null)
             {
-                timeout.Token.ThrowIfCancellationRequested(); RequireSteamAccount(steamId);
+                timeout.Token.ThrowIfCancellationRequested(); RequireSourceAccount();
                 var candidates = Process.GetProcessesByName(GameProcess);
                 try
                 {
@@ -156,7 +150,7 @@ internal static class CharacterExporter
                     {
                         if (MatchesLaunchedGame(process, retailExe, startedAt))
                         {
-                            if (game is not null) throw new IOException("Multiple Steam game processes started.");
+                            if (game is not null) throw new IOException("Multiple matching game processes started.");
                             game = process;
                         }
                     }
@@ -164,12 +158,12 @@ internal static class CharacterExporter
                 finally { foreach (var process in candidates) if (process != game) process.Dispose(); }
                 if (game is null) await Task.Delay(200, timeout.Token);
             }
-            RequireSteamAccount(steamId);
-            reporter.Step("Waiting for the Steam game window");
+            RequireSourceAccount();
+            reporter.Step("Waiting for the " + source.DisplayName + " game window");
             while (true)
             {
                 timeout.Token.ThrowIfCancellationRequested(); game.Refresh();
-                if (game.HasExited) throw new IOException("Steam's game launch ended before its window opened. Try Export character again.");
+                if (game.HasExited) throw new IOException(source.DisplayName + " game launch ended before its window opened. Try Export character again.");
                 if (game.MainWindowHandle != IntPtr.Zero) break;
                 await Task.Delay(200, timeout.Token);
             }
@@ -199,11 +193,11 @@ internal static class CharacterExporter
             }
             await Task.WhenAll(Pump(listener.StandardOutput), Pump(listener.StandardError), listener.WaitForExitAsync(cancellationToken));
             if (listener.ExitCode != 0 || !File.Exists(output) || capturedName is null) throw new IOException("Character export did not complete. Your previous exports are intact.");
-            RequireSteamAccount(steamId);
+            RequireSourceAccount();
             ExportFileName.Complete(output, capturedName);
             // The export is committed once the file is in place; announce it before closing the game.
             Console.WriteLine("KPC_CAPTURED " + JsonSerializer.Serialize(capturedName));
-            reporter.Step("Closing the captured Steam game");
+            reporter.Step("Closing the captured " + source.DisplayName + " game");
             await CloseCapturedGameAsync(game, retailExe, startedAt);
         }
         finally

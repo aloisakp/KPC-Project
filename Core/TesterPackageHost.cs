@@ -76,7 +76,7 @@ public static class TesterPackageHost
         if(release.PublicExportVersion==1 && operation!="export-character")
             throw new TesterException("Public export packages cannot merge or launch the tester game.");
     }
-    public static async Task<string?> RunAsync(TesterClient client,SignedRelease envelope,string operation,string storageRoot,IReporter reporter,CancellationToken ct,ulong? exportSteamId=null)
+    public static async Task<string?> RunAsync(TesterClient client,SignedRelease envelope,string operation,string storageRoot,IReporter reporter,CancellationToken ct,ulong? exportSteamId=null,CharacterExportSource? exportSource=null)
     {
         var release=VerifyRelease(envelope);
         RequireOperation(release,operation);
@@ -122,7 +122,7 @@ public static class TesterPackageHost
             toolsRoot = await runtime.MapAsync(toolsRoot, ct);
 #endif
             var request=JsonSerializer.Serialize(new {operation,storageRoot,session=release.PublicExportVersion==1?null:client.Session,
-                exportSteamId=exportSteamId?.ToString(),release,toolsRoot},TesterClient.Json);
+                exportSteamId=exportSteamId?.ToString(),exportSource,release,toolsRoot},TesterClient.Json);
             var transport=JsonSerializer.SerializeToUtf8Bytes(new {envelope,request,toolsRoot},TesterClient.Json);
             var pipeName="kpc-private-"+Guid.NewGuid().ToString("N");
             using var lifetime=CancellationTokenSource.CreateLinkedTokenSource(ct);
