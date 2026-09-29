@@ -40,16 +40,25 @@ public static class TesterPackageHost
             !Version.TryParse(release.MinLauncherVersion,out var minimum) || minimum>typeof(TesterPackageHost).Assembly.GetName().Version ||
             release.Packages is null || release.Packages.Length!=2 || release.Packages.Count(p=>p.Kind=="instructions")!=1 || release.Packages.Count(p=>p.Kind=="tools")!=1)
             throw new TesterException("This private update requires a newer launcher or has unsupported metadata.");
-        if (release.PublicExportVersion==1 ? release.KeyAcquisition is not null || release.CharacterTransferVersion!=0 :
-            release.KeyAcquisition is not { Operation: "getKey" } acquisition || !Id(acquisition.Version) ||
-            !LauncherConfig.RequiredArchives.Any(a => a.ManifestId.ToString() == acquisition.ArchiveManifest))
-            throw new TesterException("The private update has an unsupported local data preparation request.");
+        // Since 0.8.0 the client is prepared without any game key. A descriptor that still asks for
+        // the retired local key preparation belongs to the key-based merge: refuse it, never ignore it.
+        if(RequestsKeyPreparation(payload))
+            throw new TesterException("This private update still uses the retired key-based merge. The testing administrator must publish the key-free 0.8.0 update.");
+        if(release.PublicExportVersion==1 && release.CharacterTransferVersion!=0)
+            throw new TesterException("The character export update has unsupported metadata.");
         foreach(var package in release.Packages)
         {
             if(package.Bytes<=0 || package.Bytes>MaximumPackage || !System.Text.RegularExpressions.Regex.IsMatch(package.Sha256 ?? "","^[a-f0-9]{64}$"))
                 throw new TesterException("The private package has invalid metadata.");
         }
         return release;
+    }
+    // Descriptor properties bind case-insensitively, so any spelling of the retired field counts.
+    internal static bool RequestsKeyPreparation(byte[] payload)
+    {
+        using var document=JsonDocument.Parse(payload);
+        return document.RootElement.ValueKind==JsonValueKind.Object &&
+            document.RootElement.EnumerateObject().Any(p=>p.Name.Equals("keyAcquisition",StringComparison.OrdinalIgnoreCase));
     }
     internal static string ChildPath(string root,string relative)
     {

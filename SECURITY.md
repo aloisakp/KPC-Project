@@ -21,15 +21,16 @@
   or an ephemeral IPv4 loopback connection with a random 256-bit capability for
   the Linux game worker, and
   temporary workers. Scripts are passed through stdin. The launcher does not save
-  instruction archives, recipe scripts or hook scripts to the tester filesystem.
+  instruction archives or hook scripts to the tester filesystem.
   This is redistribution friction, not DRM: memory, local IPC, dumps, paging,
   decrypted responses and resulting game files can be captured by the local user.
-- The signed private update requests local data preparation only after tester
-  authorization and a completed Archive A receipt. The worker checks the pinned
-  executable hash and authenticates the acquired key against an encrypted PAK
-  index. No game key is embedded in either distributed package or uploaded to the
-  service. Local workers/builders use it transiently; operating-system memory,
-  helper-process arguments, paging and diagnostic capture remain outside this guarantee.
+- No game key is acquired, embedded, stored or sent (since 0.8.0). A release
+  descriptor that still requests the retired local key preparation is refused.
+  Merge links the two downloaded depots after checking their download receipts
+  and the unmodified executable's hash. It builds no pak, changes no executable
+  byte and leaves the game's pak signature checks enabled. Before each launch the
+  prepared client's receipt must match the unmodified executable and the complete
+  signed 2021 package set, with no other package present.
 - Revocation prevents subsequent protected API calls. It does not terminate a
   running game or invalidate an already issued gateway ticket before its existing
   five-minute expiry. A changed merge version requires rebuilding the game; a

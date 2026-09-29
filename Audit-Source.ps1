@@ -9,18 +9,25 @@ foreach ($directory in 'Linux', 'Worker', 'Installer/Windows', 'Installer/Linux'
         Where-Object { $_.Extension -in '.cs', '.csproj', '.axaml' })
 }
 $forbidden = 'QRCoder|SteamKit2|BeginAuthSession|LoginWithCredentials|RefreshToken|PasswordBox|DangerousAcceptAnyServerCertificateValidator|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|gh[pousr]_[A-Za-z0-9]{30,}|PakAesKey|ApplyPakReaderPatch|Build-Map2LegacyPatch|SkyIslandLobbyBuilder|frida-client-gateway-bootstrap'
+# Since 0.8.0 the client is prepared without a game key, pak builders or executable changes, and
+# no signature check is disabled. None of those mechanisms may return (matching ignores case).
+$retired = '\bgetKey\b|LocalGameKey|TesterKeyAcquisition|AesKey|aes-key|\brepak|pak-build|KarmaSkillTreeCompat|AwakeningSkillData|ImportedCosmeticsBuilder|CharacterIntroBuilder|NewChaserGuideBattleBuilder|PakReaderPatch|PatchedExecutable|0x1b4525b|84D1DE48B144406D|pakcache|0x3d6fe70'
 $files = $sources + @((Get-ChildItem -LiteralPath $root -File -Filter '*.xaml')) +
     @((Get-Item -LiteralPath (Join-Path $root 'KpcLauncher.csproj')))
 foreach ($file in $files) {
-    if ($file.Name -ne 'TesterClient.cs' -and [IO.File]::ReadAllText($file.FullName) -match 'ServerCertificateCustomValidationCallback') {
+    $text = [IO.File]::ReadAllText($file.FullName)
+    if ($file.Name -ne 'TesterClient.cs' -and $text -match 'ServerCertificateCustomValidationCallback') {
         throw "Custom TLS validation is allowed only in the tested tester certificate-pin implementation."
     }
-    if ([IO.File]::ReadAllText($file.FullName) -match $forbidden) {
+    if ($text -match $forbidden) {
         throw "Forbidden credential/authentication code or potential embedded secret in $($file.Name)."
+    }
+    if ($text -match $retired) {
+        throw "Retired key acquisition, pak building or executable patching code in $($file.Name): $($Matches[0])"
     }
 }
 foreach ($obsolete in 'Core/SteamSession.cs','Core/Secrets.cs','Core/UiAuthenticator.cs',
         'Core/CmServers.cs','Core/DepotDownloader.cs','InverseBoolConverter.cs') {
     if (Test-Path -LiteralPath (Join-Path $root $obsolete)) { throw "Obsolete code remains: $obsolete" }
 }
-Write-Host 'Source audit passed: no legacy credential/QR implementation or obvious embedded secret patterns.'
+Write-Host 'Source audit passed: no legacy credential/QR implementation, key acquisition, pak building, executable patching or obvious embedded secret patterns.'

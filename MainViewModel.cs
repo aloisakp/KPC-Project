@@ -339,7 +339,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
         if (_steam?.ActiveSteamId is { } active && active != steamId)
             Log_("Your Steam client is using another account. Switch it to the authorized account before Install.", LogLevel.Warn);
         await RefreshTesterAccessAsync(ct).ConfigureAwait(false);
-        await PrepareLocalTesterDataAsync(ct, refreshAccess:false).ConfigureAwait(false);
     });
 
     private async Task DownloadAsync()
@@ -360,7 +359,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
                 TrySaveConfig();
                 // Existing-file hashing can run before the pipeline's first await.
                 // Start it on a worker so the window and Cancel remain responsive.
-                await Task.Run(() => new PreservationPipeline(Config, _steam, _authorization!, this, OnArchiveReadyAsync)
+                await Task.Run(() => new PreservationPipeline(Config, _steam, _authorization!, this)
                     .RunAsync(recheck, cancellationToken), cancellationToken).ConfigureAwait(false);
             }).ConfigureAwait(false);
     }

@@ -15,10 +15,8 @@ public sealed record TesterSession(string SteamId, string Token, string Server);
 public sealed record SignedRelease(string Payload, string Signature);
 public sealed record TesterToolFile(string Path, string Sha256, long Bytes);
 public sealed record TesterPackage(string Kind, string File, string Sha256, long Bytes, TesterToolFile[]? Files);
-public sealed record TesterKeyAcquisition(string Operation, string ArchiveManifest, string Version);
 public sealed record TesterRelease(int Schema, string ReleaseId, string MergeVersion, string RuntimeVersion,
-    string MinLauncherVersion, TesterPackage[] Packages, TesterKeyAcquisition? KeyAcquisition = null,
-    int CharacterTransferVersion = 0, int PublicExportVersion = 0);
+    string MinLauncherVersion, TesterPackage[] Packages, int CharacterTransferVersion = 0, int PublicExportVersion = 0);
 public sealed record CharacterCreationStatus(string SchemaVersion, string State, string? DraftUid);
 public sealed record AccountDeletionStatus(string SchemaVersion, string State);
 public sealed record TesterStatus(bool Tester, string SteamId, SignedRelease? Release);

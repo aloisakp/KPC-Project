@@ -20,7 +20,7 @@ public static class RelayDevelopment
     public static string RequireRoot(string? value)
     {
         if (string.IsNullOrWhiteSpace(value) || !Path.IsPathFullyQualified(value))
-            throw new InvalidOperationException("Start this development build with Start-RelayDevelopment.ps1; an explicit sandbox root is required.");
+            throw new InvalidOperationException($"{RootVariable} must name an owned relay sandbox directory (a fully qualified path).");
         var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(value));
         if (root.Equals(Path.TrimEndingDirectorySeparator(Path.GetPathRoot(root)!), StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("A drive root cannot be a relay sandbox.");

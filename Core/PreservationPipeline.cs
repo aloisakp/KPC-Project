@@ -15,8 +15,7 @@ public sealed class PreservationPipeline(
     LauncherConfig config,
     SteamInstall steam,
     SteamAuthorization authorization,
-    IReporter reporter,
-    Func<ArchiveSpec, CancellationToken, Task>? onArchiveReady = null)
+    IReporter reporter)
 {
     private const string CompletionStamp = ".kpdl-complete";
     private const string StagingMarker = ".kpc-staging";
@@ -45,10 +44,7 @@ public sealed class PreservationPipeline(
 
         var needed = new List<ArchiveSpec>();
         foreach (var archive in LauncherConfig.RequiredArchives)
-        {
             if (!Survives(archive, verifyExisting, cancellationToken)) needed.Add(archive);
-            else if (onArchiveReady is not null) await onArchiveReady(archive, cancellationToken).ConfigureAwait(false);
-        }
 
         if (needed.Count == 0)
         {
@@ -80,7 +76,6 @@ public sealed class PreservationPipeline(
                 WriteStamp(directory, archive, cancellationToken);
                 foreach (var staging in stagingFolders) ClearStagingMarker(staging);
                 reporter.Log($"{archive.Label} recovered from saved files and verified against Steam's manifest. No download needed.", LogLevel.Good);
-                if (onArchiveReady is not null) await onArchiveReady(archive, cancellationToken).ConfigureAwait(false);
                 continue;
             }
             // Each supported location must be clean for this manifest before Steam starts.
@@ -114,7 +109,6 @@ public sealed class PreservationPipeline(
             WriteStamp(directory, archive, cancellationToken);
             foreach (var staging in stagingFolders) ClearStagingMarker(staging);
             reporter.Log($"{archive.Label} preserved in {directory}", LogLevel.Good);
-            if (onArchiveReady is not null) await onArchiveReady(archive, cancellationToken).ConfigureAwait(false);
         }
 
         reporter.Step("Preservation complete");

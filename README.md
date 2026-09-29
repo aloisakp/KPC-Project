@@ -17,7 +17,7 @@ The Linux launcher runs natively. The Windows game still uses Proton or Wine.
 There is no portable ZIP. See [Linux installation](LINUX.md) for the graphical
 steps and current compatibility limits.
 
-[Latest release notes](https://github.com/aloisakp/KPC-Project/releases/latest) Â·
+[Latest release notes](https://github.com/aloisakp/KPC-Project/releases/latest) ·
 [All releases](https://github.com/aloisakp/KPC-Project/releases)
 
 To review the code and build the launcher yourself, follow the
@@ -26,8 +26,10 @@ To review the code and build the launcher yourself, follow the
 Windows 10 or later, or a supported Linux desktop (see [LINUX.md](LINUX.md)),
 an installed Steam client, an internet connection, and an
 account entitled to download KurtzPel are required. Allow around 60 GB for the two
-archives and additional space for the merged game, temporary work and retained
-previous installations. Community connections use the public VPS relay.
+archives and additional space for retained previous downloads. The merged game links
+to the downloaded files and needs little extra space; a storage drive that cannot
+link files (for example FAT or exFAT) needs room for a full copy. Community
+connections use the public VPS relay.
 
 ## Use
 
@@ -38,13 +40,14 @@ previous installations. Community connections use the public VPS relay.
 4. Steam downloads each pinned version; the launcher files it into its own folder.
 5. Use **Verify downloads** to compare files with the SHA-256 receipt recorded when
    they were downloaded. Modified or older archives without a hash receipt are
-   requested from Steam again. Previous folders are retained with a .previous-â€¦
+   requested from Steam again. Previous folders are retained with a .previous-…
    suffix for manual review/removal when no download is active.
-6. For community testing, enter your tester code in **Settings â†’ Redeem code**.
+6. For community testing, enter your tester code in **Settings → Redeem code**.
    The server binds it to your verified Steam account. Normal Steam downloads and
    verification do not require a code; the tester merge and Play do.
 7. Press **Merge**. The launcher receives the current signed private instructions,
-   builds `KurtzPel-Tester` in your storage folder and verifies the result.
+   prepares `KurtzPel-Tester` in your storage folder from the two downloads and
+   verifies the result (see [how the tester game is prepared](#how-the-tester-game-is-prepared)).
 8. Press **Play**. The server checks access and the required update again before
    issuing a single-use game ticket. Revoked accounts cannot obtain new tickets.
 
@@ -77,7 +80,7 @@ your community account or provide Epic downloads for the preservation archives.
 Select the character to keep and enter the square. When capture finishes, the game closes and the launcher
 confirms the character's name. **Open exports folder** shows the character-named
 file. Delete an unwanted export there, then capture another character.
-Epic export is experimental in 0.7.3: detection, source selection and process
+Epic export (added in 0.7.3) is experimental: detection, source selection and process
 routing have automated checks; a real Epic character capture still needs validation.
 See [Epic export validation](EPIC-CHARACTER-EXPORT.md).
 
@@ -88,7 +91,7 @@ Appearance, colours, sliders and the supported equipped outfit are transferred;
 weapon skins, aura and floating accessories are excluded. Imported clothing has
 its default stats, an **[Imported]** name, no trading and a 1 GP resale value.
 
-**Settings â†’ Delete account** permanently removes your community game account,
+**Settings → Delete account** permanently removes your community game account,
 characters, inventory, currencies, levels and progress after confirmation. Close
 the game first. Your Steam account, tester access and local export files remain,
 so you can reuse an export when starting again.
@@ -136,7 +139,7 @@ the desktop keyring through `secret-tool` when available; otherwise sign-in last
 for the current launcher session and no session token is written to disk.
 Authorization is renewed after 30 days. The community session is not a Steam login
 or download credential.
-**Settings â†’ Authorize Steam** switches the linked account; **Disconnect account**
+**Settings → Authorize Steam** switches the linked account; **Disconnect account**
 removes that remembered identity.
 
 The launcher has no password field, QR renderer, Steam Guard prompt, SteamKit
@@ -163,8 +166,8 @@ update changes its identity/log format.
 Settings and logs are in `%LOCALAPPDATA%/KPCLauncher` on Windows and
 `$XDG_DATA_HOME/KPCLauncher` (normally `~/.local/share/KPCLauncher`) on Linux:
 preservation-settings.json, steam-identity.dat, tester-session.dat and
-preservation.log. Generic runtime tools are cached in tester-tools. Private recipe
-packages, scripts and hooks are received into memory, used by temporary worker
+preservation.log. Generic runtime tools are cached in tester-tools. Private runtime
+packages and hooks are received into memory, used by temporary worker
 processes and released when those workers exit. Linux runs the signed Windows
 game tooling in a dedicated Proton/Wine environment through an authenticated,
 short-lived loopback connection; the interface and Steam integration remain native. Game output, verification receipts
@@ -173,12 +176,25 @@ prevent a tester or software running as that user from capturing memory, traffic
 after decryption, or game output. Windows may also page memory or create dumps.
 Old versions' Steam token files are never read or reused by this version.
 
-After Archive A is downloaded and verified, an authorized tester receives a signed
-request to prepare local game data. The private worker acquires the game key from
-that player's own pinned executable and validates it against a local encrypted
-PAK index. It does not start the game, save a key file, or upload the key. Neither
-the launcher nor the server's private update includes the game key. Normal users
-skip this preparation. Merging acquires the key again locally in a temporary worker.
+## How the tester game is prepared
+
+Since 0.8.0 no game key is read, stored or sent, no game package is built, and no
+byte of the game or its checks is changed. **Merge** stacks the two pinned Steam
+downloads in `KurtzPel-Tester`:
+
+- the 2026 version exactly as downloaded, including its unmodified game executable;
+- every signed package of the July 2021 version (each `.pak` with its `.sig`),
+  unchanged and under its original name, in `TheChase/Content/Paks/2021`;
+- the 2021 loose files, such as movies, that the 2026 version does not have;
+- `steam_appid.txt` and the community intro video.
+
+Where the storage drive supports it, these are hard links to the downloaded files.
+The game verifies every package signature itself and uses the 2026 file wherever both
+versions have one. A receipt records the prepared files. Before each Play the launcher
+checks the unmodified executable, the complete 2021 package set and that no other
+package was added. Game folders prepared by 0.7 or older, which held generated packages
+and a changed executable, must be merged again. Private updates that still ask for the
+retired key preparation are refused.
 
 ## Verify the installer
 

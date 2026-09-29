@@ -16,7 +16,7 @@
     <ApplicationIcon>Assets\launcher.ico</ApplicationIcon>
     <InvariantGlobalization>false</InvariantGlobalization>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-    <Version>0.7.3</Version>
+    <Version>0.8.0</Version>
     <Product>KPC Launcher</Product>
     <Description>Steam downloads and server-authorized community testing.</Description>
   </PropertyGroup>
@@ -30,8 +30,8 @@
   <ItemGroup>
     <Resource Include="Assets\launcher-logo.png" />
     <Resource Include="Assets\launcher.ico" />
-    <Compile Remove="tests\**\*.cs;Linux\**\*.cs;Installer\**\*.cs;Worker\**\*.cs" />
-    <None Remove="tests\**" />
+    <Compile Remove="tests\**\*.cs;Linux\**\*.cs;Installer\**\*.cs;Worker\**\*.cs;PrivateRuntime\**\*.cs" />
+    <None Remove="tests\**;PrivateRuntime\**" />
   </ItemGroup>
 
 </Project>

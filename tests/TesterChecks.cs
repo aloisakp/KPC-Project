@@ -54,20 +54,30 @@ internal static class TesterChecks
             "launcher contains no private merge or game-launch implementation");
         using var key=RSA.Create(2048);
         var value=new TesterRelease(1,"release-1","merge-1","runtime-1","0.2.0",[
-            new("instructions","i.zip",new string('a',64),100,null),new("tools","t.zip",new string('b',64),100,[])],
-            new("getKey",LauncherConfig.RequiredArchives[0].ManifestId.ToString(),"local-key-1"));
+            new("instructions","i.zip",new string('a',64),100,null),new("tools","t.zip",new string('b',64),100,[])]);
         var bytes=JsonSerializer.SerializeToUtf8Bytes(value,TesterClient.Json);
         var envelope=new SignedRelease(Convert.ToBase64String(bytes),Convert.ToBase64String(key.SignData(bytes,HashAlgorithmName.SHA256,RSASignaturePadding.Pkcs1)));
-        check(TesterPackageHost.VerifyRelease(envelope,key.ExportSubjectPublicKeyInfoPem()).ReleaseId=="release-1","valid signed tester release");
+        check(TesterPackageHost.VerifyRelease(envelope,key.ExportSubjectPublicKeyInfoPem()).ReleaseId=="release-1","valid signed tester release needs no local key preparation");
         void Reject(Action action,string name){try{action();}catch(TesterException){check(true,name);return;}throw new Exception("FAIL: "+name);}
-        var publicExport=value with {PublicExportVersion=1,KeyAcquisition=null,MinLauncherVersion="0.5.1"};
-        SignedRelease Sign(TesterRelease metadata) {var data=JsonSerializer.SerializeToUtf8Bytes(metadata,TesterClient.Json);return new(Convert.ToBase64String(data),Convert.ToBase64String(key.SignData(data,HashAlgorithmName.SHA256,RSASignaturePadding.Pkcs1)));}
+        var publicExport=value with {PublicExportVersion=1,MinLauncherVersion="0.5.1"};
+        SignedRelease SignBytes(byte[] data)=>new(Convert.ToBase64String(data),Convert.ToBase64String(key.SignData(data,HashAlgorithmName.SHA256,RSASignaturePadding.Pkcs1)));
+        SignedRelease Sign(TesterRelease metadata)=>SignBytes(JsonSerializer.SerializeToUtf8Bytes(metadata,TesterClient.Json));
         check(TesterPackageHost.VerifyRelease(Sign(publicExport),key.ExportSubjectPublicKeyInfoPem()).PublicExportVersion==1,"signed public exporter needs no tester recipe");
         TesterPackageHost.RequireOperation(publicExport,"export-character");
-        foreach(var operation in new[]{"play","merge","getKey","--tester-node"})
+        foreach(var operation in new[]{"play","merge","--tester-node"})
             Reject(()=>TesterPackageHost.RequireOperation(publicExport,operation),"public export cannot authorize "+operation);
-        foreach(var invalid in new[]{publicExport with {PublicExportVersion=2},publicExport with {CharacterTransferVersion=1},publicExport with {KeyAcquisition=value.KeyAcquisition}})
+        foreach(var invalid in new[]{publicExport with {PublicExportVersion=2},publicExport with {CharacterTransferVersion=1}})
             Reject(()=>TesterPackageHost.VerifyRelease(Sign(invalid),key.ExportSubjectPublicKeyInfoPem()),"mixed or unsupported public export capability rejected");
+        // A descriptor from the retired key-based merge is refused, whatever the field's spelling or value.
+        foreach(var (field,request) in new[]{("keyAcquisition","{\"operation\":\"getKey\",\"archiveManifest\":\"4819182874103212568\",\"version\":\"local-key-1\"}"),
+            ("KeyAcquisition","{\"operation\":\"getKey\"}"),("keyacquisition","null")})
+            foreach(var candidate in new[]{value,publicExport})
+            {
+                var node=JsonSerializer.SerializeToNode(candidate,TesterClient.Json)!.AsObject();
+                node[field]=System.Text.Json.Nodes.JsonNode.Parse(request);
+                Reject(()=>TesterPackageHost.VerifyRelease(SignBytes(Encoding.UTF8.GetBytes(node.ToJsonString())),key.ExportSubjectPublicKeyInfoPem()),
+                    "retired key preparation request refused: "+field+(candidate.PublicExportVersion==1?" (public export)":""));
+            }
         var exportTemp=Path.Combine(root,"capture.tmp");File.WriteAllText(exportTemp,"first");
         var exportName=ExportFileName.Complete(exportTemp,"Aloisa#EU");
         check(Path.GetFileName(exportName)=="Aloisa#EU.kpc-character.json","public export uses the character name");
@@ -95,24 +105,17 @@ internal static class TesterChecks
             Reject(()=>TesterClient.ValidateDeletion(result),"account deletion requires an explicit empty result");
         foreach(var state in new[]{new CharacterCreationStatus("v2","empty",null),new CharacterCreationStatus("kp-character-creation/v1","import-pending",null),new CharacterCreationStatus("kp-character-creation/v1","ready","123")})
             Reject(()=>CharacterExportFile.ValidateStatus(state),"inconsistent character creation state rejected");
-        foreach(var acquisition in new TesterKeyAcquisition?[]{null,new("execute","4819182874103212568","v1"),
-            new("getKey","../../outside","v1"),new("getKey","4819182874103212568","")})
-        {
-            var unsupported=JsonSerializer.SerializeToUtf8Bytes(value with {KeyAcquisition=acquisition},TesterClient.Json);
-            var signed=new SignedRelease(Convert.ToBase64String(unsupported),Convert.ToBase64String(key.SignData(unsupported,HashAlgorithmName.SHA256,RSASignaturePadding.Pkcs1)));
-            Reject(()=>TesterPackageHost.VerifyRelease(signed,key.ExportSubjectPublicKeyInfoPem()),"unsupported signed local preparation request rejected");
-        }
         var config=new LauncherConfig{StorageRoot=Path.Combine(root,"preparation")};
         var archive=LauncherConfig.RequiredArchives[0];var manifest=archive.ManifestId.ToString();
         var directory=config.ArchiveDirectory(archive);Directory.CreateDirectory(directory);
         var receipt=Path.Combine(directory,".kpdl-complete");
-        check(!PreservationPipeline.HasVerifiedReceipt(config,manifest),"missing archive cannot trigger preparation");
+        check(!PreservationPipeline.HasVerifiedReceipt(config,manifest),"missing archive has no verified receipt");
         File.WriteAllText(receipt,manifest);
-        check(!PreservationPipeline.HasVerifiedReceipt(config,manifest),"legacy completion marker cannot trigger preparation");
+        check(!PreservationPipeline.HasVerifiedReceipt(config,manifest),"legacy completion marker is not a verified receipt");
         File.WriteAllText(receipt,JsonSerializer.Serialize(new ArchiveStamp(manifest,1,10,new string('a',64))));
-        check(PreservationPipeline.HasVerifiedReceipt(config,manifest),"completed download receipt allows preparation eligibility");
+        check(PreservationPipeline.HasVerifiedReceipt(config,manifest),"completed download receipt is verified");
         File.WriteAllText(receipt,JsonSerializer.Serialize(new ArchiveStamp("wrong",1,10,new string('a',64))));
-        check(!PreservationPipeline.HasVerifiedReceipt(config,manifest),"wrong archive receipt cannot trigger preparation");
+        check(!PreservationPipeline.HasVerifiedReceipt(config,manifest),"another archive's receipt is not verified");
         foreach(var item in LauncherConfig.RequiredArchives)
         {
             var folder=config.ArchiveDirectory(item);Directory.CreateDirectory(folder);
@@ -120,14 +123,11 @@ internal static class TesterChecks
             var measured=PreservationPipeline.Measure(folder,default);
             File.WriteAllText(Path.Combine(folder,".kpdl-complete"),JsonSerializer.Serialize(new ArchiveStamp(item.ManifestId.ToString(),measured.Files,measured.Bytes,measured.Digest)));
         }
-        var ready=new List<ulong>();const ulong account=76561198000000001;
+        const ulong account=76561198000000001;
         var steam=new SteamInstall(Path.Combine(root,"fake-steam"),"unused",()=>account,(_,_,_)=>throw new Exception("Unexpected Steam download"));
-        await new PreservationPipeline(config,steam,new SteamAuthorization(account,DateTimeOffset.UtcNow),new QuietReporter(),(item,ct)=>
-        {
-            check(PreservationPipeline.HasVerifiedReceipt(config,item.ManifestId.ToString()),"archive callback receives only a completed receipt");
-            ready.Add(item.ManifestId);return Task.CompletedTask;
-        }).RunAsync(true,default);
-        check(ready.SequenceEqual(LauncherConfig.RequiredArchives.Select(a=>a.ManifestId)),"verified existing archives each notify preparation once");
+        await new PreservationPipeline(config,steam,new SteamAuthorization(account,DateTimeOffset.UtcNow),new QuietReporter()).RunAsync(true,default);
+        check(LauncherConfig.RequiredArchives.All(item=>PreservationPipeline.HasVerifiedReceipt(config,item.ManifestId.ToString())),
+            "verified existing archives complete without another Steam download");
         var altered=Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(bytes).Replace("merge-1","merge-2"));
         Reject(()=>TesterPackageHost.VerifyRelease(envelope with{Payload=Convert.ToBase64String(altered)},key.ExportSubjectPublicKeyInfoPem()),"tampered recipe metadata rejected");
         using var wrong=RSA.Create(2048);

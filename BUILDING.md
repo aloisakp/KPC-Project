@@ -29,7 +29,7 @@ A real transfer additionally requires a Steam entitlement and disk space.
 Windows:
 
 ```powershell
-./publish.ps1 -Version 0.7.3
+./publish.ps1 -Version 0.8.0
 ```
 
 This builds the Windows launcher, Velopack update package/feed, and a graphical
@@ -42,7 +42,7 @@ Linux (on Linux, with .NET 8 SDK, Python 3 for packaging, and desktop libraries)
 
 ```sh
 dotnet run --project tests/Native/NativeTests.csproj -c Release
-bash publish-linux.sh 0.7.3
+bash publish-linux.sh 0.8.0
 ```
 
 The native Avalonia UI links the shared preservation, authorization and signed
@@ -66,11 +66,13 @@ UI screenshots are retained as workflow artifacts. Neither synthetic tests nor
 worker startup establish real Steam download or gameplay compatibility.
 
 The tester signing **public** key in Assets/tester-signing-public.pem must be
-included. The launcher contains the generic signed-package host only. Private
-recipes, builder assemblies, hooks, databases, code registers and signing private
-keys belong outside this repository. Do not copy private service artifacts into
-public release assets. Changing the trust key or endpoint requires a launcher
-release; routine private instruction updates do not.
+included. The launcher contains the generic signed-package host only. The private
+runtime, hooks, databases, code registers and signing private keys belong outside
+the public launcher source. Do not copy private service artifacts into public
+release assets. Changing the trust key or endpoint requires a launcher release;
+routine private instruction updates do not. `Audit-Source.ps1` also refuses any
+return of game-key acquisition, pak building or executable patching (retired in
+0.8.0).
 
 Matchmaking, player counts, host selection, TURN connections and game hooks live
 in the server and signed private runtime. The public package host loads the current
@@ -91,7 +93,7 @@ builds do not apply Velopack updates; use an installed build to test that path.
 
 Update RELEASE_VERSION to a new three-part version and push to main. Pushing
 source does not build or publish a release. When a release is ready, select
-**Actions â†’ Build release â†’ Run workflow** on the intended branch.
+**Actions → Build release → Run workflow** on the intended branch.
 The manual workflow runs tests and the source audit, builds the installer, checks
 NuGet advisories, creates checksums, and publishes the tag/assets from that exact
 workflow commit. Existing published versions are never overwritten.

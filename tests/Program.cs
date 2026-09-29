@@ -43,7 +43,6 @@ try
         return;
     }
     ManifestRecoveryChecks.Run(Check, root, reporter);
-    RelayDeviceChecks.Run(Check,root);
     foreach (var invalid in new[] { "", "relative", Path.GetPathRoot(root)! , root })
     {
         var rejected = false;
@@ -255,11 +254,11 @@ try
     Check(File.ReadAllBytes(Path.Combine(copiedTarget, "large.bin")).SequenceEqual(originalBytes), "cross-drive copy preserves all bytes");
     var tailPath = Path.Combine(root, "unicode-log.txt");
     var tail = LogTail.FromEnd(tailPath);
-    var unicodeLine = Encoding.UTF8.GetBytes("folder/æ—¥/complete\n");
+    var unicodeLine = Encoding.UTF8.GetBytes("folder/日/complete\n");
     File.WriteAllBytes(tailPath, unicodeLine[..8]);
     Check(tail.ReadNewLines().Count == 0, "partial log line waits for its terminator");
     using (var append = new FileStream(tailPath, FileMode.Append)) append.Write(unicodeLine[8..]);
-    Check(tail.ReadNewLines().Single() == "folder/æ—¥/complete", "UTF-8 paths survive fragmented log writes");
+    Check(tail.ReadNewLines().Single() == "folder/日/complete", "UTF-8 paths survive fragmented log writes");
     File.WriteAllText(tailPath, "new\n");
     Check(tail.ReadNewLines().Single() == "new", "log truncation resets pending decoder state");
     var resultPage = SteamOpenId.BuildResultPage(true, "test-style-nonce");

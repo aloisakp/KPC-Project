@@ -75,11 +75,7 @@ public sealed partial class MainViewModel
     {
         OnPropertyChanged(nameof(HasTesterAccess));OnPropertyChanged(nameof(TesterBuildReady));OnPropertyChanged(nameof(MergeButtonText));Requery();
     }
-    private Task CheckTesterAccessAsync()=>RunGuarded("Checking tester access",async ct=>
-    {
-        await RefreshTesterAccessAsync(ct).ConfigureAwait(false);
-        await PrepareLocalTesterDataAsync(ct, refreshAccess:false).ConfigureAwait(false);
-    });
+    private Task CheckTesterAccessAsync()=>RunGuarded("Checking tester access",RefreshTesterAccessAsync);
     private async Task RefreshTesterAccessAsync(CancellationToken ct)
     {
         ClearTesterAccess();
@@ -90,9 +86,9 @@ public sealed partial class MainViewModel
             if(status.Tester&&status.Release is not null)
             {
                 _testerRelease=TesterPackageHost.VerifyRelease(status.Release);_testerEnvelope=status.Release;_hasTesterAccess=true;
-                TesterAccessStatus=TesterBuildReady?"Tester access active Â· game ready":"Tester access active Â· merge required";
+                TesterAccessStatus=TesterBuildReady?"Tester access active · game ready":"Tester access active · merge required";
             }
-            else TesterAccessStatus="No tester access Â· enter your code in Settings";
+            else TesterAccessStatus="No tester access · enter your code in Settings";
         }
         catch {TesterAccessStatus="Tester service unavailable or sign-in required";throw;}
         finally {_ui.Post(()=>{RefreshTesterProperties();RefreshFacts();});}
@@ -103,28 +99,7 @@ public sealed partial class MainViewModel
         await _testers.RedeemAsync(code,ct).ConfigureAwait(false);
         Log_("Tester access linked to your Steam account.",LogLevel.Good);
         await RefreshTesterAccessAsync(ct).ConfigureAwait(false);
-        await PrepareLocalTesterDataAsync(ct, refreshAccess:false).ConfigureAwait(false);
     });
-    private Task OnArchiveReadyAsync(ArchiveSpec archive,CancellationToken ct) =>
-        archive == LauncherConfig.RequiredArchives[0] ? PrepareLocalTesterDataAsync(ct) : Task.CompletedTask;
-
-    private async Task PrepareLocalTesterDataAsync(CancellationToken ct,bool refreshAccess=true)
-    {
-        // Optional preparation cannot turn a successful normal Steam download into a failure.
-        if(_testers.Session is null || _authorization is null || _steam is null)return;
-        try
-        {
-            if(refreshAccess)await RefreshTesterAccessAsync(ct).ConfigureAwait(false);
-            if(!HasTesterAccess || _testerEnvelope is null || _testerRelease?.KeyAcquisition is not { } request)return;
-            if(!PreservationPipeline.HasVerifiedReceipt(Config,request.ArchiveManifest))return;
-            if(_testers.Session?.SteamId!=_authorization.SteamId.ToString())return;
-            _steam.RequireAccount(_authorization);
-            await TesterPackageHost.RunAsync(_testers,_testerEnvelope,request.Operation,Config.StorageRoot,this,ct).ConfigureAwait(false);
-            Log_("Local tester data is ready. It will be acquired again in memory when merging.",LogLevel.Good);
-        }
-        catch(OperationCanceledException)when(ct.IsCancellationRequested){throw;}
-        catch(Exception ex){Log_("Tester data preparation could not finish: "+ex.Message+" Normal Steam downloads remain available.",LogLevel.Warn);}
-    }
     private async Task RequireTesterAccessAsync(CancellationToken ct)
     {
         await RefreshTesterAccessAsync(ct).ConfigureAwait(false);
