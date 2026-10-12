@@ -7,6 +7,11 @@ using KpcLauncher.Core;
 using KpcLauncher.Setup;
 
 if (!OperatingSystem.IsLinux()) throw new Exception("Run the native tests on Linux.");
+if (args is ["--proton-export", var exportWork, var exportSteam, var exportWorker, var exportListener, var exportKey])
+{
+    await ProtonExportCheck.Run(exportWork, exportSteam, exportWorker, exportListener, exportKey);
+    return;
+}
 var root = Path.Combine(Path.GetTempPath(), "kpc-native-tests-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 var count = 0;
@@ -157,6 +162,7 @@ try
         finally { if (!process.HasExited) process.Kill(); process.WaitForExit(); }
     }
     Check(steam!.ActiveSteamId is null && !steam.IsClientRunning, "exited Steam invalidates identity");
+    await LinuxExportChecks.Run(Check, root, steam);
     Check(!SafePaths.Same(Path.Combine(root, "A"), Path.Combine(root, "a")), "Linux paths are case sensitive");
     Check(!steam.MatchesStaging(steam.StagingDirectory(844870,844871).ToUpperInvariant(),844870,844871), "case mismatch cannot authorize a staging directory");
     const uint app = 844870, depot = 844871;

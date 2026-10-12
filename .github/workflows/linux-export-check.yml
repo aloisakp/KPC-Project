@@ -1,0 +1,19 @@
+name: Linux export check
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  proton:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: "8.0.x"
+      - run: sudo apt-get update && sudo apt-get install -y xvfb gcc-mingw-w64-x86-64 lib32gcc-s1 libfreetype6 libfontconfig1
+      - name: Export a stand-in character through a real Proton session
+        run: bash tests/linux-export-check.sh

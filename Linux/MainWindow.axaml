@@ -27,8 +27,9 @@
           <TextBlock Text="The launcher runs natively. For the Windows game, it detects Proton installed through Steam, or Wine. If neither is installed, install Proton Experimental from Steam → Library → Tools." TextWrapping="Wrap" Foreground="#ACB6CC" />
           <TextBlock Text="Character transfer" FontWeight="SemiBold" FontSize="16" />
           <TextBlock Text="{Binding ExportHelp}" TextWrapping="Wrap" />
-          <TextBlock Text="Existing character exports can still be imported when you press Play with an empty community account." TextWrapping="Wrap" Foreground="#ACB6CC" />
-          <Button Content="Open exports folder" Command="{Binding OpenExportsFolderCommand}" />
+          <WrapPanel><Button Margin="0,0,8,8" Content="Export character" Command="{Binding ExportCharacterCommand}" />
+            <Button Margin="0,0,8,8" Content="Open exports folder" Command="{Binding OpenExportsFolderCommand}" /></WrapPanel>
+          <TextBlock Text="Exports are named after your character. Delete an unwanted file here, then export again. Play offers your most recent export when your community account has no character." TextWrapping="Wrap" Foreground="#ACB6CC" />
         </StackPanel></ScrollViewer>
       </TabItem>
       <TabItem Header="Settings">

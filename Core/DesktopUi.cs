@@ -10,7 +10,9 @@ public static class DesktopUi
     public static Func<IReadOnlyList<CharacterExportSource>, Task<CharacterExportSource?>> ChooseExportSource { get; set; } = _ => Task.FromResult<CharacterExportSource?>(null);
     internal static async Task<CharacterExportSource?> SelectExportSourceAsync(IReadOnlyList<CharacterExportSource> sources)
     {
-        if (sources.Count == 0) throw new TesterException("No installed retail copy of KurtzPel was found. Install it through Steam or Epic Games, then try Export character again.");
+        if (sources.Count == 0) throw new TesterException(OperatingSystem.IsLinux()
+            ? "KurtzPel was not found in your Steam libraries. Install it through Steam, then try Export character again."
+            : "No installed retail copy of KurtzPel was found. Install it through Steam or Epic Games, then try Export character again.");
         if (sources.Count == 1) return sources[0];
         var chosen = await ChooseExportSource(sources);
         return chosen is null ? null : CharacterExportSources.Resolve(chosen, sources);

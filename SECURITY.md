@@ -38,6 +38,12 @@
 - Account matching is checked before a command, during monitoring and before
   accepting files. It cannot atomically control a separately running Steam client
   or stop a transfer already handed to Steam. Steam remains the access-control owner.
+- Linux character export starts the retail Steam copy in the launcher's Proton
+  environment through Proton's Steam helper, without the worker channel's capability
+  in the game's environment. Proton cannot see the native Steam client, so the worker
+  asks the native launcher over its private stdin and stdout to confirm the account
+  before launch, while waiting for the game and before saving the export. A missing
+  answer counts as a mismatch, and closing stdin cancels the export.
 - Completion must name the expected staging directory and manifest. Storage links
   and junctions are rejected. Previous folders are kept instead of recursively
   removed. A file lock prevents simultaneous launcher operations. Steam's current

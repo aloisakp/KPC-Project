@@ -29,7 +29,11 @@ The launcher and depot downloads do not need Wine. The game and its signed
 Windows tooling still do. The launcher looks for Proton in your Steam libraries,
 then a system Wine installation. If needed, install **Proton Experimental** through
 **Steam → Library → Tools** and retry. No console setup or Python helper is needed.
-Game tooling uses its own environment under the launcher settings directory.
+Game tooling uses its own environment under the launcher settings directory. With Proton,
+the launcher translates folders with Proton's `getcompatpath` and starts its tools with
+`runinprefix`. Proton's `run` starts a program through Proton's Steam helper, which did not
+pass the program's output on in testing with a Proton 10 build, so earlier versions could
+not read the translated storage folder or the tools' progress there.
 
 Version 0.7.1 handles Steam's `ubuntu12_32` / `ubuntu12_64` download locations
 and backslashes in completion messages. Version 0.7.2 also recovers completed
@@ -47,9 +51,25 @@ account/log validation, installer behavior, both graphical windows, and Windows
 worker startup under Wine. Real Steam depot downloads, Flatpak/Proton combinations
 and community gameplay still need testing on players' machines.
 
-Character capture from the retail game is currently Windows-only because the
-exporter cannot attach across separate Proton environments. Existing exported
-characters can be imported on Linux through the normal Play flow.
+## Character export
+
+**Export character** uses the KurtzPel copy in your Steam library. Steam normally runs a
+Proton game in a separate Wine environment that the character listener cannot reach, so the
+launcher starts that copy in its own Proton environment instead, the way Steam starts a
+Proton game: through Proton's Steam helper with KurtzPel's Steam app ID, from the game's
+install folder. Keep the Steam client open and signed in to the authorized account, choose
+the character to keep and enter the square. The launcher saves the export, then closes the game.
+
+Export needs Proton installed through Steam (plain Wine cannot connect the game to Steam)
+and the native Steam client; Flatpak Steam is not supported for export yet. Close KurtzPel
+before starting. The game keeps its settings for this environment separately from the ones
+Steam uses. During the export the launcher confirms that Steam is still signed in to the
+authorized account, as on Windows. Cancel stops the listener and leaves the game open.
+
+Linux export is experimental. An automated check (`tests/linux-export-check.sh`) runs the
+whole export through a real Proton build with a stand-in game and listener; a capture from the
+real game on Linux still needs confirmation. Existing exports can be imported through the
+normal Play flow.
 
 ## Updates and settings
 

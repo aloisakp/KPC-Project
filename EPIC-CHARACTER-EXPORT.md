@@ -13,7 +13,8 @@ Epic records are ignored. Duplicate Epic records do not create duplicate choices
 One detected copy starts directly. Multiple copies open a dialog with named Steam
 and Epic Games buttons, installation paths, and Cancel. Closing the dialog cancels;
 it never silently picks Steam. With no copy, the user is told to install retail
-KurtzPel. Linux capture remains disabled; existing exports remain importable there.
+KurtzPel. Linux capture uses the Steam copy through Proton (see [LINUX.md](LINUX.md#character-export));
+there is no Epic source on Linux.
 
 The worker receives the selection and independently rediscovers it before launch.
 It invokes Steam or Epic Games Launcher, with the selected game's URI. Epic's

@@ -151,7 +151,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IReporter, I
         ? "Choose Steam's data folder containing steamapps and ubuntu12_32 or ubuntu12_64. Native and Flatpak Steam are detected automatically."
         : "Select the Windows Steam installation folder containing steam.exe.";
     public string ExportHelp => _steam?.IsNativeLinux == true
-        ? "Character export is not yet supported with native Steam across Proton/Wine environments. Downloads and community play remain available for testing."
+        ? "Export character starts KurtzPel from your Steam library with Proton. Keep Steam signed in, choose the character you want to export, then enter the lobby."
         : "Open KurtzPel through Steam, then enter the lobby with the character you want to export.";
     public string SteamFolder => _steam?.Root ?? (string.IsNullOrWhiteSpace(Config.SteamRoot)
         ? "Not found - select Steam folder" : Config.SteamRoot);

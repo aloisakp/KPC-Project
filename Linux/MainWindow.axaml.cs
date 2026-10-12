@@ -24,6 +24,7 @@ public partial class MainWindow : Window
             return result.FirstOrDefault()?.TryGetLocalPath();
         });
         DesktopUi.Dialog = (title, message, confirm) => OnUi(() => DialogAsync(title, message, confirm));
+        DesktopUi.ChooseExportSource = sources => OnUi(() => ChooseExportSourceAsync(sources));
         model = new MainViewModel(); DataContext = model;
         Opened += async (_, _) =>
         {
@@ -42,6 +43,25 @@ public partial class MainWindow : Window
         Closed += (_, _) => { model.TrySaveConfig(); model.Dispose(); };
     }
     private static async Task<T> OnUi<T>(Func<Task<T>> action) => await Dispatcher.UIThread.InvokeAsync(action);
+    private Task<CharacterExportSource?> ChooseExportSourceAsync(IReadOnlyList<CharacterExportSource> sources)
+    {
+        var dialog = new Window { Title = "Export character", Width = 560, SizeToContent = SizeToContent.Height, CanResize = false, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var panel = new StackPanel { Margin = new Thickness(24), Spacing = 12, Children = {
+            new TextBlock { Text = "Which copy would you like to export from?", FontSize = 20, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap },
+            new TextBlock { Text = "KurtzPel is installed in more than one Steam library. Choose the one with your character, then enter the lobby.", TextWrapping = TextWrapping.Wrap } } };
+        foreach (var source in sources)
+        {
+            var folder = source.Executable[..^(CharacterExportSources.GameRelativePath.Length + 1)];
+            var choice = new Button { Content = new TextBlock { Text = source.DisplayName + "\n" + folder, TextWrapping = TextWrapping.Wrap }, HorizontalAlignment = HorizontalAlignment.Stretch };
+            choice.Click += (_, _) => dialog.Close(source);
+            panel.Children.Add(choice);
+        }
+        var cancel = new Button { Content = "Cancel", IsCancel = true, HorizontalAlignment = HorizontalAlignment.Right };
+        cancel.Click += (_, _) => dialog.Close(null);
+        panel.Children.Add(cancel);
+        dialog.Content = panel;
+        return dialog.ShowDialog<CharacterExportSource?>(this);
+    }
     private Task<bool> DialogAsync(string title, string message, bool confirm)
     {
         var dialog = new Window { Title = title, Width = 520, SizeToContent = SizeToContent.Height, CanResize = false, WindowStartupLocation = WindowStartupLocation.CenterOwner };
