@@ -120,3 +120,14 @@ the output directory is moved, retires only that depot's saved progress record,
 and checks the fresh download against the first download's file checksums. It does
 not publish a release or use a player account. Launcher regression tests separately
 cover manifest-verified backup recovery and targeted progress-record retirement.
+
+The manual **Linux export check** workflow runs `tests/linux-export-check.sh`, which you can
+also run locally. It builds stand-in Windows programs for the game and the listener with
+mingw, and a game worker that trusts only a key generated for that run, then exports a
+character through a real Proton session: the launcher's runtime and worker host start the
+stand-in game through Proton's Steam helper and the listener reads it from the game's memory.
+It also covers an account switch during capture and cancellation. By default it downloads a
+pinned, checksum-verified GE-Proton build and SteamCMD's native Steam client library; pass a
+Proton directory from a Steam library (and optionally a `steamclient.so`) to check Valve's
+Proton instead. It uses no Steam account, retail game, server or private package, and cannot
+show that the private listener works with the real game.

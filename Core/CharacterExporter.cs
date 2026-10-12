@@ -11,6 +11,12 @@ namespace KpcLauncher.Core;
 internal static class CharacterExporter
 {
     private const string GameProcess = "TheChase-Win64-Shipping";
+#if GAME_WORKER
+    // Starting the game under Proton, especially the first time in the launcher's prefix, can take longer.
+    private static readonly TimeSpan LaunchTimeout = TimeSpan.FromMinutes(5);
+#else
+    private static readonly TimeSpan LaunchTimeout = TimeSpan.FromMinutes(3);
+#endif
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -66,6 +72,55 @@ internal static class CharacterExporter
         return information.ProcessId;
     }
 
+#if GAME_WORKER
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool TerminateProcess(SafeProcessHandle process, uint exitCode);
+
+    /// <summary>
+    /// Starts the game through Proton's Steam helper with the app identity Steam gives a Proton game, in
+    /// this Proton session so the listener can attach. CREATE_NO_WINDOW keeps Wine from handing the
+    /// helper this worker's output pipe, and the worker channel's capability is not passed on.
+    /// </summary>
+    internal static ProtonLaunch StartThroughProton(string target)
+    {
+        if (!File.Exists(ProtonExport.SteamHelper))
+            throw new IOException("Proton's Steam helper is missing from the game runtime. Install Proton through Steam, then try again.");
+        if (!Path.IsPathFullyQualified(target) || target.Contains('"') || !File.Exists(target))
+            throw new IOException("The KurtzPel installation cannot be started. Verify the game in Steam, then try again.");
+        // Wine passes Linux variables through, so names can differ only by case (http_proxy, HTTP_PROXY).
+        string[] replaced = [WorkerChannel.PortVariable, WorkerChannel.TokenVariable, "SteamAppId", "SteamGameId", "SteamOverlayGameId"];
+        var environment = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
+            .Where(entry => !replaced.Contains((string)entry.Key, StringComparer.OrdinalIgnoreCase))
+            .ToDictionary(entry => (string)entry.Key, entry => entry.Value as string ?? "", StringComparer.Ordinal);
+        foreach (var name in replaced[2..])
+            environment[name] = LauncherConfig.AppId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var block = new StringBuilder();
+        foreach (var (name, value) in environment.OrderBy(entry => entry.Key, StringComparer.OrdinalIgnoreCase))
+            block.Append(name).Append('=').Append(value).Append('\0');
+        block.Append('\0');
+        var commandLine = new StringBuilder("\"" + ProtonExport.SteamHelper + "\" \"" + target + "\"");
+        var startup = new StartupInfo { Size = Marshal.SizeOf<StartupInfo>() };
+        const uint CreateUnicodeEnvironment = 0x00000400, CreateNoWindow = 0x08000000;
+        var pointer = Marshal.StringToHGlobalUni(block.ToString());
+        try
+        {
+            if (!CreateProcessW(ProtonExport.SteamHelper, commandLine, IntPtr.Zero, IntPtr.Zero, false,
+                    CreateUnicodeEnvironment | CreateNoWindow, pointer, Path.GetDirectoryName(target), ref startup, out var information))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            CloseHandle(information.Thread);
+            return new ProtonLaunch(new SafeProcessHandle(information.Process, ownsHandle: true));
+        }
+        finally { Marshal.FreeHGlobal(pointer); }
+    }
+
+    internal sealed class ProtonLaunch(SafeProcessHandle helper) : IDisposable
+    {
+        public void Stop() { if (!helper.IsClosed) TerminateProcess(helper, 1); }
+        public void Dispose() => helper.Dispose();
+    }
+#endif
+
     internal static bool MatchesLaunchedGame(Process process, string expectedExe, DateTime launchedAt)
     {
         try
@@ -78,7 +133,10 @@ internal static class CharacterExporter
             var size = (uint)path.Capacity;
             if (!QueryFullProcessImageNameW(process.SafeHandle, 0, path, ref size))
                 throw new Win32Exception(Marshal.GetLastWin32Error());
-            return string.Equals(path.ToString(), expectedExe, StringComparison.OrdinalIgnoreCase) &&
+            // Wine can report an image started from a long path with the \\?\ prefix.
+            var image = path.ToString();
+            if (image.StartsWith(@"\\?\", StringComparison.Ordinal)) image = image[4..];
+            return string.Equals(image, expectedExe, StringComparison.OrdinalIgnoreCase) &&
                 process.StartTime.ToUniversalTime() >= launchedAt.AddSeconds(-1);
         }
         catch (InvalidOperationException) when (process.HasExited) { return false; }
@@ -103,15 +161,30 @@ internal static class CharacterExporter
     {
         if(request.GetProperty("operation").GetString()!="export-character") throw new IOException("Export packages cannot start tester operations.");
         var steamId=ulong.Parse(request.GetProperty("exportSteamId").GetString()!);
+        var requested = request.TryGetProperty("exportSource", out var sourceJson) && sourceJson.ValueKind != JsonValueKind.Null
+            ? sourceJson.Deserialize<CharacterExportSource>(TesterClient.Json) : null;
+#if GAME_WORKER
+        // The Linux launcher owns native Steam; this worker runs in the launcher's Proton session.
+        if (!SteamOpenId.IsIndividualId(steamId)) throw new IOException("Steam authorization is required.");
+        var link = new LauncherLink(Console.In, Console.Out);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, link.Closed);
+        cancellationToken = linked.Token;
+        var source = ProtonExport.Resolve(requested ?? throw new IOException("Choose the Steam copy of KurtzPel to export from."));
+        void RequireSourceAccount()
+        {
+            if (link.AccountMatches()) return;
+            cancellationToken.ThrowIfCancellationRequested(); // The launcher closed the link to cancel.
+            throw new IOException("Keep Steam signed in to the account authorized in the launcher.");
+        }
+#else
         var steam=SteamInstall.FindConfigured(LauncherConfig.Load());
         if (steam is { IsNativeLinux: true }) throw new IOException("Character export from a separate Proton/Wine process is not supported by the native Steam helper yet.");
         if (!SteamOpenId.IsIndividualId(steamId)) throw new IOException("Steam authorization is required.");
-        var requested = request.TryGetProperty("exportSource", out var sourceJson) && sourceJson.ValueKind != JsonValueKind.Null
-            ? sourceJson.Deserialize<CharacterExportSource>(TesterClient.Json) : null;
         var source = requested is null
             ? new CharacterExportSource("steam", FindRetailExecutable(steam?.Executable ?? throw new IOException("Steam could not be found. Select its folder in Settings.")))
             : CharacterExportSources.Resolve(requested, CharacterExportSources.Discover(steam));
         void RequireSourceAccount() => RequireRetailAccount(source, steam, steamId);
+#endif
         RequireSourceAccount();
         var toolsRoot=request.GetProperty("toolsRoot").GetString()!;
         var storage=request.GetProperty("storageRoot").GetString()!;
@@ -127,6 +200,12 @@ internal static class CharacterExporter
         var outputFolder = Path.Combine(storage, "Character Exports");
         SafePaths.NoLinks(outputFolder);
         var output = Path.Combine(outputFolder, ".capture-" + Guid.NewGuid().ToString("N") + ".tmp");
+#if GAME_WORKER
+        cancellationToken.ThrowIfCancellationRequested();
+        reporter.Step("Starting KurtzPel through Proton");
+        var startedAt = DateTime.UtcNow;
+        using var launcher = StartThroughProton(ProtonExport.LaunchTarget(retailExe));
+#else
         var launch = source.Platform == "steam"
             ? (Executable: steam!.Executable, Arguments: new[] { "--", "steam://rungameid/844870" })
             : CharacterExportSources.FindEpicLauncher(source.EpicAppId!);
@@ -135,8 +214,9 @@ internal static class CharacterExporter
         var startedAt = DateTime.UtcNow;
         // The same command Windows runs for a steam:// link ("steam.exe" -- "%1").
         StartWithoutShell(launch.Executable, launch.Arguments);
+#endif
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromMinutes(3));
+        timeout.CancelAfter(LaunchTimeout);
         Process? game = null;
         try
         {
@@ -202,6 +282,10 @@ internal static class CharacterExporter
         }
         finally
         {
+#if GAME_WORKER
+            // A helper that never started the game would otherwise keep this Proton session open.
+            if (game is null) launcher.Stop();
+#endif
             game?.Dispose();
             // An interrupted capture must never be offered as an import.
             if (File.Exists(output)) File.Delete(output);

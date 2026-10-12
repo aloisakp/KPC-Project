@@ -89,6 +89,10 @@ public static class TesterPackageHost
     {
         var release=VerifyRelease(envelope);
         RequireOperation(release,operation);
+#if LINUX
+        var runtime = new GameRuntime();
+        if (operation == "export-character") runtime.RequireExport();
+#endif
         var tools=release.Packages.Single(p=>p.Kind=="tools");
         var files=tools.Files ?? throw new TesterException("The tools package has no signed file list.");
         if(files.Length is <1 or >20000 || files.Sum(f=>f.Bytes)>2L*1024*1024*1024 || files.Any(f=>f.Bytes<0 ||
@@ -124,62 +128,130 @@ public static class TesterPackageHost
         var instructions=await client.DownloadAsync(release,release.Packages.Single(p=>p.Kind=="instructions"),ct);
         try
         {
-            SafePaths.NoLinks(storageRoot);
+            var session=release.PublicExportVersion==1?null:client.Session;
 #if LINUX
-            var runtime = new GameRuntime();
-            storageRoot = await runtime.MapAsync(storageRoot, ct);
-            toolsRoot = await runtime.MapAsync(toolsRoot, ct);
-#endif
-            var request=JsonSerializer.Serialize(new {operation,storageRoot,session=release.PublicExportVersion==1?null:client.Session,
-                exportSteamId=exportSteamId?.ToString(),exportSource,release,toolsRoot},TesterClient.Json);
-            var transport=JsonSerializer.SerializeToUtf8Bytes(new {envelope,request,toolsRoot},TesterClient.Json);
-            var pipeName="kpc-private-"+Guid.NewGuid().ToString("N");
-            using var lifetime=CancellationTokenSource.CreateLinkedTokenSource(ct);
-#if LINUX
-            using var channel = new WorkerChannel();
-            var start = runtime.Worker();
-            channel.Configure(start);
+            return await HostAsync(runtime,envelope,release,instructions,session,operation,storageRoot,toolsRoot,reporter,ct,exportSteamId,exportSource);
 #else
-            var start=new ProcessStartInfo(Environment.ProcessPath!) {UseShellExecute=false,CreateNoWindow=true,
-                RedirectStandardOutput=true,RedirectStandardError=true};
-            start.ArgumentList.Add("--tester-worker");start.Environment[PipeVariable]=pipeName;
+            return await HostAsync(envelope,release,instructions,session,operation,storageRoot,toolsRoot,reporter,ct,exportSteamId,exportSource);
 #endif
-            using var process=Process.Start(start) ?? throw new TesterException("The private worker could not start.");
-#if LINUX
-            var server = channel.ServeAsync(transport, instructions, lifetime.Token);
-#else
-            var server = ServeAsync(pipeName,transport,instructions,lifetime.Token);
-#endif
-            using var cancel=ct.Register(()=>{try{if(!process.HasExited)process.Kill(entireProcessTree:true);}catch{}});
-            string? capturedName=null;
-            async Task Pump(StreamReader reader)
-            {
-                while(await reader.ReadLineAsync() is { } line)
-                    if(line.StartsWith("KPC_STATUS ",StringComparison.Ordinal)) reporter.Step(line[11..]);
-                    else if(line.StartsWith("KPC_ERROR ",StringComparison.Ordinal)) reporter.Log(line[10..],LogLevel.Error);
-                    else if(line.StartsWith("KPC_CAPTURED ",StringComparison.Ordinal))
-                    {
-                        if(operation!="export-character" || capturedName is not null)throw new TesterException("Unexpected capture completion.");
-                        capturedName=ParseCapturedName(line[13..]);
-                    }
-            }
-            try
-            {
-                await Task.WhenAll(Pump(process.StandardOutput),Pump(process.StandardError),process.WaitForExitAsync(ct));
-                // KPC_CAPTURED follows the file rename, so a later worker failure cannot undo the export.
-                if(process.ExitCode!=0 && operation=="export-character" && capturedName is not null)
-                {
-                    reporter.Log($"The export worker exited with 0x{process.ExitCode:X8} after saving {capturedName}; the export is complete.",LogLevel.Warn);
-                    return capturedName;
-                }
-                if(process.ExitCode!=0) throw new TesterException(release.PublicExportVersion==1?"Character export failed. See the status above; previous exports are intact.":"The private operation failed. The previous installation was preserved where possible; see the status above.");
-                if(operation=="export-character" && capturedName is null)throw new TesterException("The export did not report a completed capture.");
-                return capturedName;
-            }
-            finally {lifetime.Cancel();await server;CryptographicOperations.ZeroMemory(transport);}
         }
         finally {CryptographicOperations.ZeroMemory(instructions);}
     }
+    /// <summary>Runs a verified release's worker with its received instructions and verified tools.</summary>
+#if LINUX
+    internal static async Task<string?> HostAsync(GameRuntime runtime,SignedRelease envelope,TesterRelease release,byte[] instructions,TesterSession? session,
+#else
+    internal static async Task<string?> HostAsync(SignedRelease envelope,TesterRelease release,byte[] instructions,TesterSession? session,
+#endif
+        string operation,string storageRoot,string toolsRoot,IReporter reporter,CancellationToken ct,ulong? exportSteamId,CharacterExportSource? exportSource)
+    {
+        SafePaths.NoLinks(storageRoot);
+#if LINUX
+        storageRoot = await runtime.MapAsync(storageRoot, ct);
+        toolsRoot = await runtime.MapAsync(toolsRoot, ct);
+        // The worker starts the selected copy inside the runtime, so it needs the runtime's path.
+        if (exportSource is not null) exportSource = exportSource with { Executable = await runtime.MapAsync(exportSource.Executable, ct) };
+#endif
+        var request=JsonSerializer.Serialize(new {operation,storageRoot,session,
+            exportSteamId=exportSteamId?.ToString(),exportSource,release,toolsRoot},TesterClient.Json);
+        var transport=JsonSerializer.SerializeToUtf8Bytes(new {envelope,request,toolsRoot},TesterClient.Json);
+        var pipeName="kpc-private-"+Guid.NewGuid().ToString("N");
+        using var lifetime=CancellationTokenSource.CreateLinkedTokenSource(ct);
+#if LINUX
+        using var channel = new WorkerChannel();
+        var start = runtime.Worker();
+        channel.Configure(start);
+        // Proton cannot see native Steam: an export worker asks this launcher to confirm the account.
+        Func<bool>? accountMatches = operation == "export-character" && exportSteamId is { } exportAccount
+            ? () => runtime.Steam.ActiveSteamId == exportAccount : null;
+        start.RedirectStandardInput = accountMatches is not null;
+#else
+        var start=new ProcessStartInfo(Environment.ProcessPath!) {UseShellExecute=false,CreateNoWindow=true,
+            RedirectStandardOutput=true,RedirectStandardError=true};
+        start.ArgumentList.Add("--tester-worker");start.Environment[PipeVariable]=pipeName;
+#endif
+        using var process=Process.Start(start) ?? throw new TesterException("The private worker could not start.");
+#if LINUX
+        var server = channel.ServeAsync(transport, instructions, lifetime.Token);
+#else
+        var server = ServeAsync(pipeName,transport,instructions,lifetime.Token);
+#endif
+        using var cancel=ct.Register(()=>
+        {
+#if LINUX
+            // Closing stdin cancels a Linux export inside the worker, which stops its listener first.
+            if(accountMatches is not null){try{process.StandardInput.Close();}catch{}return;}
+#endif
+            try{if(!process.HasExited)process.Kill(entireProcessTree:true);}catch{}
+        });
+        string? capturedName=null;
+        async Task Pump(StreamReader reader)
+        {
+            while(await reader.ReadLineAsync() is { } line)
+                if(line.StartsWith("KPC_STATUS ",StringComparison.Ordinal)) reporter.Step(line[11..]);
+                else if(line.StartsWith("KPC_ERROR ",StringComparison.Ordinal)) reporter.Log(line[10..],LogLevel.Error);
+                else if(line.StartsWith("KPC_CAPTURED ",StringComparison.Ordinal))
+                {
+                    if(operation!="export-character" || capturedName is not null)throw new TesterException("Unexpected capture completion.");
+                    capturedName=ParseCapturedName(line[13..]);
+                }
+#if LINUX
+                else if(line==ProtonExport.AccountRequest && accountMatches is not null)
+                {
+                    try
+                    {
+                        await process.StandardInput.WriteLineAsync(accountMatches()?ProtonExport.AccountMatches:ProtonExport.AccountMismatch);
+                        await process.StandardInput.FlushAsync();
+                    }
+                    catch(Exception ex) when(ex is IOException or ObjectDisposedException){/* Stopped or cancelled: a missing answer is a mismatch. */}
+                }
+#endif
+        }
+        try
+        {
+#if LINUX
+            if(accountMatches is not null) await WaitForExportAsync(process,Pump(process.StandardOutput),Pump(process.StandardError),ct);
+            else
+#endif
+            await Task.WhenAll(Pump(process.StandardOutput),Pump(process.StandardError),process.WaitForExitAsync(ct));
+            // KPC_CAPTURED follows the file rename, so a later worker failure cannot undo the export.
+            if(process.ExitCode!=0 && operation=="export-character" && capturedName is not null)
+            {
+                reporter.Log($"The export worker exited with 0x{process.ExitCode:X8} after saving {capturedName}; the export is complete.",LogLevel.Warn);
+                return capturedName;
+            }
+            if(process.ExitCode!=0) throw new TesterException(release.PublicExportVersion==1?"Character export failed. See the status above; previous exports are intact.":"The private operation failed. The previous installation was preserved where possible; see the status above.");
+            if(operation=="export-character" && capturedName is null)throw new TesterException("The export did not report a completed capture.");
+            return capturedName;
+        }
+        finally {lifetime.Cancel();await server;CryptographicOperations.ZeroMemory(transport);}
+    }
+#if LINUX
+    /// <summary>
+    /// Wine helpers and a game left open after a failed capture keep stderr open, so stop waiting for it
+    /// shortly after the worker exits. A cancelled worker gets time to stop its listener before it is ended.
+    /// </summary>
+    private static async Task WaitForExportAsync(Process process,Task output,Task errors,CancellationToken ct)
+    {
+        var exited=process.WaitForExitAsync(CancellationToken.None);
+        var cancelled=new TaskCompletionSource();
+        using(ct.Register(()=>cancelled.TrySetResult()))
+        {
+            var deadline=cancelled.Task.ContinueWith(_=>Task.Delay(TimeSpan.FromSeconds(10)),TaskScheduler.Default).Unwrap();
+            if(await Task.WhenAny(exited,deadline)!=exited)
+            {
+                try{process.Kill(entireProcessTree:true);}catch(Exception ex) when(ex is InvalidOperationException or System.ComponentModel.Win32Exception){}
+                await exited;
+            }
+        }
+        foreach(var (stream,grace) in new[]{(output,TimeSpan.FromSeconds(5)),(errors,TimeSpan.FromSeconds(3))})
+        {
+            if(await Task.WhenAny(stream,Task.Delay(grace))==stream) await stream;
+            else _=stream.ContinueWith(t=>_=t.Exception,TaskContinuationOptions.OnlyOnFaulted);
+        }
+        ct.ThrowIfCancellationRequested();
+    }
+#endif
     internal static string ParseCapturedName(string json)
     {
         if(json.Length>2048)throw new TesterException("Invalid captured character name.");

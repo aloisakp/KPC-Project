@@ -71,18 +71,21 @@ updates continue to come from the signed private runtime when you press Play.
 
 ## Character transfer and account deletion
 
-**Export character** is currently a Windows feature (Linux can import existing exports): no tester code,
-archive downloads or merge are needed. Authorize Steam first. The Windows launcher detects
-retail KurtzPel installations from Steam and Epic Games. If both are present, choose
+**Export character** needs no tester code, archive downloads or merge. Authorize Steam first.
+The Windows launcher detects retail KurtzPel installations from Steam and Epic Games. If both are present, choose
 **Steam**, **Epic Games**, or **Cancel**; with one detected copy, it opens that copy directly.
 Epic Games handles its own retail login. Epic export does not link an Epic account to
 your community account or provide Epic downloads for the preservation archives.
+The Linux launcher exports from the Steam copy: it starts KurtzPel with Proton in its own game
+environment, where the character listener can reach the game (see [Linux character export](LINUX.md#character-export)).
 Select the character to keep and enter the square. When capture finishes, the game closes and the launcher
 confirms the character's name. **Open exports folder** shows the character-named
 file. Delete an unwanted export there, then capture another character.
 Epic export (added in 0.7.3) is experimental: detection, source selection and process
 routing have automated checks; a real Epic character capture still needs validation.
-See [Epic export validation](EPIC-CHARACTER-EXPORT.md).
+See [Epic export validation](EPIC-CHARACTER-EXPORT.md). Linux export is also experimental:
+an automated check runs it through a real Proton build with a stand-in game and listener,
+and a real capture on Linux still needs confirmation.
 
 When your community account has no character, Play offers to use your latest
 export. Accepting opens an unnamed character in rebirth for editing and naming;

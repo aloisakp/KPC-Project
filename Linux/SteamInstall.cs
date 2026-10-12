@@ -15,6 +15,8 @@ public sealed partial class SteamInstall
     public string Root { get; }
     public string Executable => FindCommand(_flatpak ? "flatpak" : "steam") ?? "";
     public bool IsNativeLinux => true;
+    public bool IsFlatpak => _flatpak;
+    internal static string CurrentUserId => getuid().ToString(CultureInfo.InvariantCulture);
     public string ConsoleLog => Path.Combine(Root, "logs", "console_log.txt");
     public string ContentLog => Path.Combine(Root, "logs", "content_log.txt");
     public string StagingDirectory(uint appId, uint depotId) => Path.Combine(Root, "steamapps", "content", $"app_{appId}", $"depot_{depotId}");

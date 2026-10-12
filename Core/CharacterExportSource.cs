@@ -21,7 +21,10 @@ internal static class CharacterExportSources
     internal static IReadOnlyList<CharacterExportSource> Discover(SteamInstall? steam)
     {
 #if LINUX
-        return [];
+        // Native Steam lists its libraries with Linux paths. Epic has no native Linux client.
+        if (steam is null) return [];
+        try { return FindSteamLibraries(steam.Root).Select(exe => new CharacterExportSource("steam", exe)).ToList(); }
+        catch (Exception ex) when (InvalidInstallation(ex)) { return []; }
 #else
         return Discover(steam is { IsNativeLinux: false } ? steam.Executable : null, EpicManifestDirectories());
 #endif
@@ -107,10 +110,13 @@ internal static class CharacterExportSources
             "The selected KurtzPel installation changed or is no longer available. Start Export character again.");
     }
 
-    internal static IReadOnlyList<string> FindSteam(string steamExe)
+    internal static IReadOnlyList<string> FindSteam(string steamExe) =>
+        FindSteamLibraries(Path.GetDirectoryName(Path.GetFullPath(steamExe))!);
+
+    /// <summary>Retail copies in a Steam data root and the libraries it lists.</summary>
+    internal static IReadOnlyList<string> FindSteamLibraries(string steamRoot)
     {
-        var steamRoot = Path.GetDirectoryName(Path.GetFullPath(steamExe))!;
-        var libraries = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { steamRoot };
+        var libraries = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal) { steamRoot };
         var libraryFile = Path.Combine(steamRoot, "steamapps", "libraryfolders.vdf");
         if (File.Exists(libraryFile))
         {
@@ -120,20 +126,24 @@ internal static class CharacterExportSources
         }
         var found = new List<string>();
         foreach (var library in libraries)
-        {
-            var manifest = Path.Combine(library, "steamapps", "appmanifest_844870.acf");
-            if (!File.Exists(manifest)) continue;
-            if (new FileInfo(manifest).Length > 1024 * 1024) throw new IOException("Steam's game manifest is too large.");
-            var text = File.ReadAllText(manifest);
-            if (!Regex.IsMatch(text, "\"appid\"\\s+\"844870\"")) continue;
-            var install = Regex.Match(text, "\"installdir\"\\s+\"([^\"]+)\"");
-            if (!install.Success) continue;
-            var folder = install.Groups[1].Value;
-            if (folder is "." or ".." || folder.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) throw new IOException("Invalid Steam install folder.");
-            var exe = Path.Combine(library, "steamapps", "common", folder, GameRelativePath);
-            if (File.Exists(exe)) found.Add(Path.GetFullPath(exe));
-        }
+            if (FindInLibrary(library) is { } exe) found.Add(exe);
         return found;
+    }
+
+    /// <summary>The shipping executable of the copy that one Steam library's manifest names, if installed.</summary>
+    internal static string? FindInLibrary(string library)
+    {
+        var manifest = Path.Combine(library, "steamapps", "appmanifest_844870.acf");
+        if (!File.Exists(manifest)) return null;
+        if (new FileInfo(manifest).Length > 1024 * 1024) throw new IOException("Steam's game manifest is too large.");
+        var text = File.ReadAllText(manifest);
+        if (!Regex.IsMatch(text, "\"appid\"\\s+\"844870\"")) return null;
+        var install = Regex.Match(text, "\"installdir\"\\s+\"([^\"]+)\"");
+        if (!install.Success) return null;
+        var folder = install.Groups[1].Value;
+        if (folder is "." or ".." || folder.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) throw new IOException("Invalid Steam install folder.");
+        var exe = Path.Combine(library, "steamapps", "common", folder, GameRelativePath);
+        return File.Exists(exe) ? Path.GetFullPath(exe) : null;
     }
 
 #if !LINUX

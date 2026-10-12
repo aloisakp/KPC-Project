@@ -15,7 +15,8 @@ internal static class SafePaths
 
     public static void NoLinks(string path)
     {
-        for (var item = new DirectoryInfo(Path.GetFullPath(path)); item is not null; item = item.Parent)
+        // A volume root is not a link anyone chose: Wine reports its drive mappings (Z: is "/") as reparse points.
+        for (var item = new DirectoryInfo(Path.GetFullPath(path)); item?.Parent is not null; item = item.Parent)
         {
             FileAttributes attributes;
             try { attributes = File.GetAttributes(item.FullName); }
