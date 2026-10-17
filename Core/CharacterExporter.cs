@@ -220,32 +220,42 @@ internal static class CharacterExporter
         Process? game = null;
         try
         {
-            while (game is null)
+            try
             {
-                timeout.Token.ThrowIfCancellationRequested(); RequireSourceAccount();
-                var candidates = Process.GetProcessesByName(GameProcess);
-                try
+                while (game is null)
                 {
-                    foreach (var process in candidates)
+                    timeout.Token.ThrowIfCancellationRequested(); RequireSourceAccount();
+                    var candidates = Process.GetProcessesByName(GameProcess);
+                    try
                     {
-                        if (MatchesLaunchedGame(process, retailExe, startedAt))
+                        foreach (var process in candidates)
                         {
-                            if (game is not null) throw new IOException("Multiple matching game processes started.");
-                            game = process;
+                            if (MatchesLaunchedGame(process, retailExe, startedAt))
+                            {
+                                if (game is not null) throw new IOException("Multiple matching game processes started.");
+                                game = process;
+                            }
                         }
                     }
+                    finally { foreach (var process in candidates) if (process != game) process.Dispose(); }
+                    if (game is null) await Task.Delay(200, timeout.Token);
                 }
-                finally { foreach (var process in candidates) if (process != game) process.Dispose(); }
-                if (game is null) await Task.Delay(200, timeout.Token);
+                RequireSourceAccount();
+                reporter.Step("Waiting for the " + source.DisplayName + " game window");
+                while (true)
+                {
+                    timeout.Token.ThrowIfCancellationRequested(); game.Refresh();
+                    if (game.HasExited) throw new IOException(source.DisplayName + " game launch ended before its window opened. Try Export character again.");
+                    if (game.MainWindowHandle != IntPtr.Zero) break;
+                    await Task.Delay(200, timeout.Token);
+                }
             }
-            RequireSourceAccount();
-            reporter.Step("Waiting for the " + source.DisplayName + " game window");
-            while (true)
+            // Only the launch deadline cancels while the export itself is not cancelled.
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
-                timeout.Token.ThrowIfCancellationRequested(); game.Refresh();
-                if (game.HasExited) throw new IOException(source.DisplayName + " game launch ended before its window opened. Try Export character again.");
-                if (game.MainWindowHandle != IntPtr.Zero) break;
-                await Task.Delay(200, timeout.Token);
+                throw new IOException(game is null
+                    ? $"KurtzPel did not start within {LaunchTimeout.TotalMinutes:0} minutes. Check that it starts from {source.DisplayName}, close it, then try Export character again."
+                    : $"KurtzPel started, but its window did not open within {LaunchTimeout.TotalMinutes:0} minutes. Close KurtzPel, then try Export character again.");
             }
             var runner = Path.Combine(toolsRoot, "export", "tools", "character-export", "run.js");
             var start = new ProcessStartInfo(Path.Combine(toolsRoot, "client", "node.exe"))
@@ -255,6 +265,7 @@ internal static class CharacterExporter
             start.ArgumentList.Add(runner); start.ArgumentList.Add(game.Id.ToString()); start.ArgumentList.Add(output);
             using var listener = StartListener(start,toolsRoot,assets) ?? throw new IOException("Could not start the character listener.");
             string? capturedName = null;
+            var errors = new Queue<string>();
             using var cancel = cancellationToken.Register(() => { try { listener.Kill(true); } catch (InvalidOperationException) { } });
             async Task Pump(StreamReader reader)
             {
@@ -269,10 +280,19 @@ internal static class CharacterExporter
                             throw new IOException("The capture completion message is invalid.");
                         capturedName = name;
                     }
+                    // An uncaught error in the listener prints only as plain output.
+                    else if (TesterPackageHost.ErrorMessage(line) is { } error)
+                        lock (errors) { errors.Enqueue(error); if (errors.Count > 5) errors.Dequeue(); }
                 }
             }
             await Task.WhenAll(Pump(listener.StandardOutput), Pump(listener.StandardError), listener.WaitForExitAsync(cancellationToken));
-            if (listener.ExitCode != 0 || !File.Exists(output) || capturedName is null) throw new IOException("Character export did not complete. Your previous exports are intact.");
+            if (listener.ExitCode != 0 || !File.Exists(output) || capturedName is null)
+            {
+                foreach (var error in errors) reporter.Log(error, LogLevel.Error);
+                throw new IOException(listener.ExitCode != 0
+                    ? $"The character listener stopped with exit code 0x{listener.ExitCode:X8}. Your previous exports are intact."
+                    : "Character export did not complete. Your previous exports are intact.");
+            }
             RequireSourceAccount();
             ExportFileName.Complete(output, capturedName);
             // The export is committed once the file is in place; announce it before closing the game.

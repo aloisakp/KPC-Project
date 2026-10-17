@@ -71,6 +71,11 @@ whole export through a real Proton build with a stand-in game and listener; a ca
 real game on Linux still needs confirmation. Existing exports can be imported through the
 normal Play flow.
 
+If an export fails, the error names the step it stopped at. The log
+(`~/.local/share/KPCLauncher/preservation.log`; **Open log file** in the launcher) lists the
+Proton build used, each export step, the reason, and any messages from Proton, Wine or the
+listener. Include those lines when you report a problem.
+
 ## Updates and settings
 
 The launcher checks for releases and offers the Linux installer. It verifies the

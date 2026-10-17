@@ -110,11 +110,26 @@ internal static class ProtonExportCheck
             Check(await Until(() => !ProcessRunning(@"\client\node.exe")), "cancel stops the listener inside the Proton session");
             Check(GameRuntime.RetailGameRunning(), "cancel leaves the game open");
             Check(Directory.GetFiles(exports, "*.kpc-character.json").Length == 1, "a cancelled export saves nothing");
+            await EndSession();
+            Check(await Until(() => !GameRuntime.RetailGameRunning()), "test session ended again");
+
+            // The listener fails with an uncaught error: the log explains it without the listener's source.
+            Environment.SetEnvironmentVariable("KPC_EXPORT_CHECK_DELAY_MS", null);
+            Environment.SetEnvironmentVariable("KPC_EXPORT_CHECK_FAIL", "1");
+            var fourth = new Reporter();
+            var failure = await Failure<TesterException>(Export(fourth, default));
+            Check(failure?.Message.Contains("failed during \"Listening to the game\"") == true, "a failed export names the step it stopped at");
+            Check(fourth.Errors.Contains("Error: stand-in attach failure") && fourth.Errors.Any(e => e.Contains("listener stopped with exit code 0x00000007")),
+                "the log has the listener's error message and exit code");
+            Check(!fourth.Logs.Any(l => l.Contains("private listener source") || l.Contains("run.js")), "the log has none of the listener's source or paths");
+            Check(fourth.Logs.Contains("Starting KurtzPel through Proton") && fourth.Logs.Contains("Waiting for the Steam game window") &&
+                fourth.Logs.Any(l => l.Contains("worker stopped with exit code 0x00000001")), "the log keeps each export step and the worker's exit code");
             Console.WriteLine($"All {count} Proton export checks passed.");
         }
         finally
         {
             Environment.SetEnvironmentVariable("KPC_EXPORT_CHECK_DELAY_MS", null);
+            Environment.SetEnvironmentVariable("KPC_EXPORT_CHECK_FAIL", null);
             await EndSession();
             steamProcess.Kill();
         }
@@ -141,10 +156,12 @@ internal static class ProtonExportCheck
         return false;
     }
 
-    private static async Task<bool> Fails<T>(Task task) where T : Exception
+    private static async Task<bool> Fails<T>(Task task) where T : Exception => await Failure<T>(task) is not null;
+
+    private static async Task<T?> Failure<T>(Task task) where T : Exception
     {
-        try { await task; return false; }
-        catch (T) { return true; }
+        try { await task; return null; }
+        catch (T ex) { return ex; }
     }
 
     private static bool Throws(Action action, string message)
@@ -161,10 +178,16 @@ internal static class ProtonExportCheck
 
     private sealed class Reporter : IReporter
     {
-        private readonly ConcurrentQueue<string> steps = new(), errors = new();
+        private readonly ConcurrentQueue<string> steps = new(), errors = new(), logs = new();
         public IReadOnlyCollection<string> Steps => steps;
         public IReadOnlyCollection<string> Errors => errors;
-        public void Log(string text, LogLevel level = LogLevel.Info) { if (level == LogLevel.Error) errors.Enqueue(text); Console.WriteLine("  log: " + text); }
+        public IReadOnlyCollection<string> Logs => logs;
+        public void Log(string text, LogLevel level = LogLevel.Info)
+        {
+            if (level == LogLevel.Error) errors.Enqueue(text);
+            logs.Enqueue(text);
+            Console.WriteLine("  log: " + text);
+        }
         public void Step(string name) { steps.Enqueue(name); Console.WriteLine("  step: " + name); }
         public void Progress(StepProgress progress) { }
     }

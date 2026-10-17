@@ -15,7 +15,7 @@ public sealed class LauncherUpdater
 
     public string CurrentVersion =>
         Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
-            .InformationalVersion.Split('+')[0] ?? "0.8.1";
+            .InformationalVersion.Split('+')[0] ?? "0.8.2";
 
     public async Task<LauncherUpdate?> CheckAsync()
     {

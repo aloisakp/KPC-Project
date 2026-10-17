@@ -37,6 +37,8 @@ internal static class LinuxExportChecks
         var runtimeRoot = Path.Combine(root, "runtime");
         var runtime = new GameRuntime(steam, runtimeRoot, worker);
         check(runtime.IsProton, "Proton in any Steam library is used for the game runtime");
+        File.WriteAllText(Path.Combine(Path.GetDirectoryName(proton)!, "version"), "1700000000 proton-9.0-check\n");
+        check(runtime.Description == Path.GetDirectoryName(proton) + " (1700000000 proton-9.0-check)", "the export log names the Proton build it uses");
         check(Throws(() => runtime.Worker(), "not prepared"), "the worker never starts in a Proton prefix that was not prepared");
         var storage = Path.Combine(root, "Storage é");
         check(await runtime.MapAsync(storage, default) == "Z:" + storage.Replace('/', '\\'), "Proton translates paths with getcompatpath, whose output reaches the launcher");
@@ -102,6 +104,20 @@ internal static class LinuxExportChecks
             check(Throws(wine.RequireExport, "needs Proton"), "export explains that Linux capture needs Proton");
         }
         finally { Environment.SetEnvironmentVariable("PATH", previousPath); }
+
+        // What a failed export adds to the log.
+        var kept = new Queue<string>();
+        foreach (var line in Enumerable.Range(1, 25).Select(i => "line " + i).Prepend("fsync: up and running.")
+                     .Append("wine: Unhandled page fault\u001b at " + new string('x', 400)))
+            TesterPackageHost.KeepOutput(kept, line);
+        check(kept.Count == 20 && kept.First() == "line 7" && !kept.Any(l => l.Contains("up and running") || l.Any(char.IsControl)) &&
+            kept.Last().StartsWith("wine: Unhandled page fault at x") && kept.Last().Length == 301,
+            "the log keeps the worker's last plain output lines, bounded and without control characters");
+        check(TesterPackageHost.ErrorMessage("Error: unable to attach") == "Error: unable to attach" &&
+            TesterPackageHost.ErrorMessage("TypeError: x is not a function") is not null &&
+            TesterPackageHost.ErrorMessage("System.IO.IOException: denied") is not null, "a listener's error messages reach the log");
+        check(new[] { "    throw new Error('private source');", "        ^", "    at attach (Z:\\export\\run.js:1:2)", "Node.js v20.11.0", "ErrorCount=2" }
+            .All(line => TesterPackageHost.ErrorMessage(line) is null), "the listener's source lines and other output do not");
     }
 
     private static bool Throws(Action action, string message)

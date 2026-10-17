@@ -36,6 +36,23 @@ internal sealed class GameRuntime
     }
     public SteamInstall Steam { get; }
     public bool IsProton => proton;
+    /// <summary>The Proton build or Wine command this runtime uses, for the log.</summary>
+    public string Description
+    {
+        get
+        {
+            if (!proton) return executable;
+            var folder = Path.GetDirectoryName(executable)!;
+            try
+            {
+                // Proton records its build in its "version" file.
+                var version = File.ReadLines(Path.Combine(folder, "version")).FirstOrDefault()?.Trim();
+                if (version is { Length: > 0 and <= 100 } && !version.Any(char.IsControl)) return folder + " (" + version + ")";
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            return folder;
+        }
+    }
     // Proton's run verb starts a program through its Steam helper, which leaves the program no usable
     // stdout or stderr. getcompatpath prints a translated path; runinprefix keeps the worker's stdio.
     private ProcessStartInfo Start(string? verb, params string[] args)

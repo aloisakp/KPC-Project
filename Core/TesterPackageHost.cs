@@ -91,7 +91,11 @@ public static class TesterPackageHost
         RequireOperation(release,operation);
 #if LINUX
         var runtime = new GameRuntime();
-        if (operation == "export-character") runtime.RequireExport();
+        if (operation == "export-character")
+        {
+            runtime.RequireExport();
+            reporter.Log("Game runtime: " + runtime.Description, LogLevel.Dim);
+        }
 #endif
         var tools=release.Packages.Single(p=>p.Kind=="tools");
         var files=tools.Files ?? throw new TesterException("The tools package has no signed file list.");
@@ -184,11 +188,19 @@ public static class TesterPackageHost
 #endif
             try{if(!process.HasExited)process.Kill(entireProcessTree:true);}catch{}
         });
-        string? capturedName=null;
+        string? capturedName=null,lastStep=null;
+        var publicExport=release.PublicExportVersion==1;
+        // Proton, Wine and the .NET runtime report start-up failures and crashes as plain output.
+        var output=new Queue<string>();
         async Task Pump(StreamReader reader)
         {
             while(await reader.ReadLineAsync() is { } line)
-                if(line.StartsWith("KPC_STATUS ",StringComparison.Ordinal)) reporter.Step(line[11..]);
+                if(line.StartsWith("KPC_STATUS ",StringComparison.Ordinal))
+                {
+                    // A failure replaces the status line, so the log keeps each export step.
+                    if(publicExport && line[11..]!=lastStep) reporter.Log(line[11..],LogLevel.Dim);
+                    reporter.Step(lastStep=line[11..]);
+                }
                 else if(line.StartsWith("KPC_ERROR ",StringComparison.Ordinal)) reporter.Log(line[10..],LogLevel.Error);
                 else if(line.StartsWith("KPC_CAPTURED ",StringComparison.Ordinal))
                 {
@@ -206,6 +218,7 @@ public static class TesterPackageHost
                     catch(Exception ex) when(ex is IOException or ObjectDisposedException){/* Stopped or cancelled: a missing answer is a mismatch. */}
                 }
 #endif
+                else if(publicExport) KeepOutput(output,line);
         }
         try
         {
@@ -220,7 +233,14 @@ public static class TesterPackageHost
                 reporter.Log($"The export worker exited with 0x{process.ExitCode:X8} after saving {capturedName}; the export is complete.",LogLevel.Warn);
                 return capturedName;
             }
-            if(process.ExitCode!=0) throw new TesterException(release.PublicExportVersion==1?"Character export failed. See the status above; previous exports are intact.":"The private operation failed. The previous installation was preserved where possible; see the status above.");
+            if(process.ExitCode!=0 && publicExport)
+            {
+                reporter.Log($"The export worker stopped with exit code 0x{process.ExitCode:X8}.",LogLevel.Warn);
+                lock(output) foreach(var line in output) reporter.Log(line,LogLevel.Dim);
+                throw new TesterException((lastStep is null?"Character export failed before KurtzPel started.":$"Character export failed during \"{lastStep}\".")+
+                    " Details are in the log; previous exports are intact.");
+            }
+            if(process.ExitCode!=0) throw new TesterException("The private operation failed. The previous installation was preserved where possible; see the status above.");
             if(operation=="export-character" && capturedName is null)throw new TesterException("The export did not report a completed capture.");
             return capturedName;
         }
@@ -252,6 +272,26 @@ public static class TesterPackageHost
         ct.ThrowIfCancellationRequested();
     }
 #endif
+    /// <summary>Keeps the last plain lines a worker printed, without control characters, for the log.</summary>
+    internal static void KeepOutput(Queue<string> lines,string line)
+    {
+        line=new string(line.Where(c=>!char.IsControl(c)).ToArray()).Trim();
+        // Proton announces its synchronization method once per process.
+        if(line.Length==0 || line.EndsWith(": up and running.",StringComparison.Ordinal)) return;
+        if(line.Length>300) line=line[..300]+"…";
+        lock(lines){lines.Enqueue(line);while(lines.Count>20)lines.Dequeue();}
+    }
+    private static readonly System.Text.RegularExpressions.Regex ErrorLine=new(@"^\s*(?:\w+\.)*\w*(?:Error|Exception)(?::|\s|$)",System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    /// <summary>
+    /// A listener's error message ("Error: ...", "TypeError: ...") cleaned for the log, or null for any other
+    /// line. Node prints the failing source line with an uncaught error; that line is never passed on.
+    /// </summary>
+    internal static string? ErrorMessage(string line)
+    {
+        if(!ErrorLine.IsMatch(line)) return null;
+        line=new string(line.Where(c=>!char.IsControl(c)).ToArray()).Trim();
+        return line.Length>300?line[..300]+"…":line;
+    }
     internal static string ParseCapturedName(string json)
     {
         if(json.Length>2048)throw new TesterException("Invalid captured character name.");

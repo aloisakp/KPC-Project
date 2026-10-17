@@ -69,6 +69,13 @@ int wmain(int argc, wchar_t **argv)
         !(cursor = json_string(cursor + 1, pid, 32)) || !json_string(cursor + 1, output, MAX_PATH))
     { puts("KPC_ERROR The listener payload is invalid."); return 4; }
     printf("KPC_STATUS Listening to the game\n"); fflush(stdout);
+    if (GetEnvironmentVariableW(L"KPC_EXPORT_CHECK_FAIL", delay, 16))
+    {
+        /* What Node prints for an uncaught error in the listener: the failing source line, then the message. */
+        fputs("Z:\\export\\tools\\character-export\\run.js:12\n        throw new Error('private listener source');\n"
+              "        ^\n\nError: stand-in attach failure\n    at attach (Z:\\export\\tools\\character-export\\run.js:12:15)\n", stderr);
+        return 7;
+    }
     if (GetEnvironmentVariableW(L"KPC_EXPORT_CHECK_DELAY_MS", delay, 16)) Sleep(wcstoul(delay, NULL, 10));
     if (!capture(wcstoul(pid, NULL, 10), name, sizeof(name))) { puts("KPC_ERROR The game's memory could not be read."); return 5; }
     wcscpy(loader, output);
