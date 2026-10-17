@@ -56,6 +56,12 @@ cp "$fixtures/TheChase.exe" "$game/"
 cp "$fixtures/TheChase-Win64-Shipping.exe" "$game/TheChase/Binaries/Win64/"
 printf '"AppState"\n{\n\t"appid"\t\t"844870"\n\t"installdir"\t\t"KurtzPel"\n}\n' > "$steam/steamapps/appmanifest_844870.acf"
 
+# Export storage below a mount point, where a separate /home partition, Btrfs subvolume or second
+# drive puts it. Wine reports every mount point as a reparse point.
+mountpoint -q /dev/shm || { echo "/dev/shm is not a separate mount, so the storage check cannot run."; exit 1; }
+mounted="$(mktemp -d /dev/shm/kpc-export-storage-XXXXXX)"
+trap 'echo "Files kept for inspection: $work $mounted"' ERR
+
 HOME="$home" timeout 1500 xvfb-run -a dotnet tests/Native/bin/Release/net8.0/NativeTests.dll --proton-export \
-  "$work" "$steam" "$work/worker/KpcGameWorker.exe" "$fixtures/node.exe" "$work/test-signing.pem"
-rm -rf -- "$work"
+  "$work" "$steam" "$work/worker/KpcGameWorker.exe" "$fixtures/node.exe" "$work/test-signing.pem" "$mounted/Storage é"
+rm -rf -- "$work" "$mounted"

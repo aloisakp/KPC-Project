@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.8.2",
+    [string]$Version = "0.8.3",
     [string]$SignParams = "",
     [string]$ArtifactDirectory = "artifacts",
     [switch]$ExecutableOnly

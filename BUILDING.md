@@ -29,7 +29,7 @@ A real transfer additionally requires a Steam entitlement and disk space.
 Windows:
 
 ```powershell
-./publish.ps1 -Version 0.8.2
+./publish.ps1 -Version 0.8.3
 ```
 
 This builds the Windows launcher, Velopack update package/feed, and a graphical
@@ -42,7 +42,7 @@ Linux (on Linux, with .NET 8 SDK, Python 3 for packaging, and desktop libraries)
 
 ```sh
 dotnet run --project tests/Native/NativeTests.csproj -c Release
-bash publish-linux.sh 0.8.2
+bash publish-linux.sh 0.8.3
 ```
 
 The native Avalonia UI links the shared preservation, authorization and signed
@@ -126,7 +126,9 @@ also run locally. It builds stand-in Windows programs for the game and the liste
 mingw, and a game worker that trusts only a key generated for that run, then exports a
 character through a real Proton session: the launcher's runtime and worker host start the
 stand-in game through Proton's Steam helper and the listener reads it from the game's memory.
-It also covers an account switch during capture and cancellation. By default it downloads a
+The storage folder is placed below a mount point (`/dev/shm`), because Wine reports mount
+points as reparse points. It also covers an account switch during capture, cancellation, a
+listener that fails, and a link in place of the export folder. By default it downloads a
 pinned, checksum-verified GE-Proton build and SteamCMD's native Steam client library; pass a
 Proton directory from a Steam library (and optionally a `steamclient.so`) to check Valve's
 Proton instead. It uses no Steam account, retail game, server or private package, and cannot

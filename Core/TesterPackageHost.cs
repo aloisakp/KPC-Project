@@ -151,6 +151,8 @@ public static class TesterPackageHost
     {
         SafePaths.NoLinks(storageRoot);
 #if LINUX
+        // The Proton worker cannot tell links from mount points, so the export folder's real path is checked here.
+        if (operation == "export-character") SafePaths.NoLinks(Path.Combine(storageRoot, "Character Exports"));
         storageRoot = await runtime.MapAsync(storageRoot, ct);
         toolsRoot = await runtime.MapAsync(toolsRoot, ct);
         // The worker starts the selected copy inside the runtime, so it needs the runtime's path.

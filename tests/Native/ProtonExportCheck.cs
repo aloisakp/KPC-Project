@@ -15,7 +15,7 @@ internal static class ProtonExportCheck
 {
     private const ulong Account = SteamOpenId.IndividualBase + 123;
 
-    public static async Task Run(string work, string steamRoot, string worker, string listener, string keyFile)
+    public static async Task Run(string work, string steamRoot, string worker, string listener, string keyFile, string storage)
     {
         var count = 0;
         void Check(bool passed, string message) { if (!passed) throw new Exception("FAIL: " + message); Console.WriteLine("PASS: " + message); count++; }
@@ -59,7 +59,9 @@ internal static class ProtonExportCheck
             var envelope = new SignedRelease(Convert.ToBase64String(payload),
                 Convert.ToBase64String(key.SignData(payload, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)));
             var verified = TesterPackageHost.VerifyRelease(envelope, key.ExportSubjectPublicKeyInfoPem());
-            var storage = Path.Combine(work, "storage");
+            // A separate /home partition, Btrfs subvolume or second drive puts the storage folder below a mount point.
+            Check(File.ReadLines("/proc/self/mountinfo").Select(l => l.Split(' ')[4].Replace("\\040", " "))
+                .Any(mount => mount != "/" && storage.StartsWith(mount + "/", StringComparison.Ordinal)), "the export folder is below a mount point");
             var exports = Path.Combine(storage, "Character Exports");
             Task<string?> Export(Reporter reporter, CancellationToken ct) => TesterPackageHost.HostAsync(runtime, envelope, verified,
                 instructions.ToArray(), null, "export-character", storage, tools, reporter, ct, Account, sources[0]);
@@ -124,6 +126,14 @@ internal static class ProtonExportCheck
             Check(!fourth.Logs.Any(l => l.Contains("private listener source") || l.Contains("run.js")), "the log has none of the listener's source or paths");
             Check(fourth.Logs.Contains("Starting KurtzPel through Proton") && fourth.Logs.Contains("Waiting for the Steam game window") &&
                 fourth.Logs.Any(l => l.Contains("worker stopped with exit code 0x00000001")), "the log keeps each export step and the worker's exit code");
+
+            // A link in place of the export folder is still refused, on its real Linux path, before the worker starts.
+            var kept = exports + " (kept)";
+            Directory.Move(exports, kept);
+            Directory.CreateSymbolicLink(exports, kept);
+            var linked = new Reporter();
+            Check(await Failure<SteamDownloadException>(Export(linked, default)) is not null && linked.Steps.Count == 0,
+                "a link in place of the export folder is refused before the worker starts");
             Console.WriteLine($"All {count} Proton export checks passed.");
         }
         finally

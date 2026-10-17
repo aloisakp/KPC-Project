@@ -7,9 +7,9 @@ using KpcLauncher.Core;
 using KpcLauncher.Setup;
 
 if (!OperatingSystem.IsLinux()) throw new Exception("Run the native tests on Linux.");
-if (args is ["--proton-export", var exportWork, var exportSteam, var exportWorker, var exportListener, var exportKey])
+if (args is ["--proton-export", var exportWork, var exportSteam, var exportWorker, var exportListener, var exportKey, var exportStorage])
 {
-    await ProtonExportCheck.Run(exportWork, exportSteam, exportWorker, exportListener, exportKey);
+    await ProtonExportCheck.Run(exportWork, exportSteam, exportWorker, exportListener, exportKey, exportStorage);
     return;
 }
 var root = Path.Combine(Path.GetTempPath(), "kpc-native-tests-" + Guid.NewGuid().ToString("N"));

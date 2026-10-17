@@ -188,7 +188,11 @@ internal static class CharacterExporter
         RequireSourceAccount();
         var toolsRoot=request.GetProperty("toolsRoot").GetString()!;
         var storage=request.GetProperty("storageRoot").GetString()!;
-        SafePaths.NoLinks(storage);
+        var outputFolder = Path.Combine(storage, "Character Exports");
+#if !GAME_WORKER
+        // Wine reports every mount point as a reparse point, so under Proton the Linux launcher checks the real folders.
+        SafePaths.NoLinks(outputFolder);
+#endif
         Directory.CreateDirectory(storage);
         using var ownership=new FileStream(Path.Combine(storage,".kpc-tester-operation.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
         var reporter=new ExportReporter();
@@ -197,8 +201,6 @@ internal static class CharacterExporter
         try { if (existing.Length != 0) throw new IOException("Close KurtzPel before starting a character export."); }
         finally { foreach (var process in existing) process.Dispose(); }
 
-        var outputFolder = Path.Combine(storage, "Character Exports");
-        SafePaths.NoLinks(outputFolder);
         var output = Path.Combine(outputFolder, ".capture-" + Guid.NewGuid().ToString("N") + ".tmp");
 #if GAME_WORKER
         cancellationToken.ThrowIfCancellationRequested();
