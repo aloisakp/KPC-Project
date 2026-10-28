@@ -103,10 +103,14 @@ public static class TesterPackageHost
             !System.Text.RegularExpressions.Regex.IsMatch(f.Sha256 ?? "","^[a-f0-9]{64}$")) || files.Select(f=>f.Path.ToLowerInvariant()).Distinct().Count()!=files.Length)
             throw new TesterException("The tools package has an invalid file list.");
         var toolsRoot=Path.Combine(LauncherConfig.AppDataDir,"tester-tools",tools.Sha256);
-        reporter.Step(release.PublicExportVersion==1?"Checking character export tools":"Checking private runtime tools");
+        var toolsStep=release.PublicExportVersion==1?"Checking character export tools":"Checking private runtime tools";
+        reporter.Step(toolsStep);
         if(!await Task.Run(()=>ToolsValid(toolsRoot,files),ct))
         {
-            var bytes=await client.DownloadAsync(release,tools,ct);
+            // The tools are public and land on disk anyway, so a broken download resumes from its partial file.
+            var partial=Path.Combine(LauncherConfig.AppDataDir,"tester-tools","partial");Directory.CreateDirectory(partial);
+            reporter.Log($"Downloading the tools package ({Human.Bytes(tools.Bytes)}).",LogLevel.Dim);
+            var bytes=await client.DownloadAsync(release,tools,ct,reporter,toolsStep,Path.Combine(partial,tools.Sha256));
             try
             {
                 using var zip=new ZipArchive(new MemoryStream(bytes),ZipArchiveMode.Read);
@@ -129,7 +133,8 @@ public static class TesterPackageHost
             finally {CryptographicOperations.ZeroMemory(bytes);}
         }
         reporter.Step(release.PublicExportVersion==1?"Receiving character export listener":"Receiving private instructions");
-        var instructions=await client.DownloadAsync(release,release.Packages.Single(p=>p.Kind=="instructions"),ct);
+        var instructions=await client.DownloadAsync(release,release.Packages.Single(p=>p.Kind=="instructions"),ct,reporter,
+            release.PublicExportVersion==1?"Receiving character export listener":"Receiving private instructions");
         try
         {
             var session=release.PublicExportVersion==1?null:client.Session;

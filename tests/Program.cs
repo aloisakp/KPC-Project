@@ -272,6 +272,7 @@ try
         File.WriteAllText(Path.Combine(args[1], "cancelled.html"), SteamOpenId.BuildResultPage(false, "nonce"));
     }
     await TesterChecks.Run(Check,root);
+    await PackageDownloadChecks.Run(Check,root);
     await ExportSourceChecks.Run(Check, root, args.Length == 2 && args[0] == "--preview-dir" ? args[1] : null);
     await ExportProcessChecks.Run(Check);
     Console.WriteLine($"All {passed} security checks passed.");

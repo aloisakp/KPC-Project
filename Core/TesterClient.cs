@@ -181,16 +181,19 @@ public sealed class TesterClient : IDisposable
         try { return JsonSerializer.Deserialize<T>(bytes,Json) ?? throw new TesterException("The tester server returned an empty response."); }
         finally { CryptographicOperations.ZeroMemory(bytes); }
     }
-    public async Task<byte[]> DownloadAsync(TesterRelease release,TesterPackage package,CancellationToken ct)
+    /// <summary>Downloads a signed package in parallel pieces with a stall timeout, retries and progress
+    /// (<see cref="PackageDownloader"/>). <paramref name="resumeFile"/> keeps partial data on disk; never pass one for
+    /// a secret package.</summary>
+    public Task<byte[]> DownloadAsync(TesterRelease release,TesterPackage package,CancellationToken ct,IReporter? reporter=null,string? step=null,string? resumeFile=null)
     {
         var prefix=release.PublicExportVersion==1?"/character-export":"";
-        using var request = Request(HttpMethod.Get,$"{prefix}/packages/{release.ReleaseId}/{package.Sha256}",null,release.PublicExportVersion!=1);
-        using var response = await http.SendAsync(request,HttpCompletionOption.ResponseHeadersRead,ct).ConfigureAwait(false);
-        await CheckAsync(response);
-        var bytes = await ReadLimitedAsync(response,package.Bytes,ct);
-        if (bytes.LongLength != package.Bytes || !Convert.ToHexString(SHA256.HashData(bytes)).Equals(package.Sha256,StringComparison.OrdinalIgnoreCase))
-        { CryptographicOperations.ZeroMemory(bytes); throw new TesterException("The private update failed its signature-backed file hash."); }
-        return bytes;
+        HttpRequestMessage Piece(long? from,long? to)
+        {
+            var request=Request(HttpMethod.Get,$"{prefix}/packages/{release.ReleaseId}/{package.Sha256}",null,release.PublicExportVersion!=1);
+            if(from is not null) request.Headers.Range=new RangeHeaderValue(from,to);
+            return request;
+        }
+        return new PackageDownloader(http,Piece,CheckAsync,package.Bytes,package.Sha256,reporter,step??"Downloading",resumeFile).RunAsync(ct);
     }
     internal static async Task<byte[]> ReadLimitedAsync(HttpResponseMessage response,long limit,CancellationToken ct)
     {
